@@ -8,9 +8,9 @@ const globals = @import("globals.zig");
 
 use @import("lex.zig");
 
-const str = []const u8;
 // c_allocator doesn't work, causes ldd to crash with duplicate symbol "_start"
 // var alloc = std.heap.c_allocator;
+// TODO(cgag): don't have this as a global
 var alloc = &std.heap.DirectAllocator.init().allocator;
 // defer std.heap.DirectAlloctor.deinit();
 
@@ -30,12 +30,17 @@ pub fn main() !void {
     }
 }
 
-fn print(s: str) !void {
+fn print(s: []const u8) !void {
     var stdout = try std.io.getStdOut();
     try stdout.write(s);
 }
 
-fn println(s: str) !void {
+fn println(s: []const u8) !void {
+
+    // TODO(cgag): basically make warn but with stdout
+    // const buf = try std.fmt.allocPrint(
+    //     alloc,
+
     const with_newline_buf = try alloc.alloc(u8, s.len+1);
     defer alloc.free(with_newline_buf);
     for (s[0..s.len])  |b, i| with_newline_buf[i] = b;
@@ -44,18 +49,28 @@ fn println(s: str) !void {
     try stdout.write(with_newline_buf);
 }
 
-fn runFile(path: str) !void {
+fn runFile(path: []const u8) !void {
     const contents = try io.readFileAlloc(alloc, path);
     defer alloc.free(contents);
     try run(contents);
 }
 
-fn run(src: str) !void {
+fn run(src: []const u8) !void {
     var scanner = Scanner.init(alloc, src);
     var tokens = try scanner.scan();
 
     for (tokens.toSlice()) |token| {
         try println(@tagName(token.type));
+        if (token.literal) |literal| {
+            switch (literal) {
+                LiteralType.Number => {
+                    warn("printing token literal ({}): {}\n", @tagName(token.type), literal.Number);
+                },
+                LiteralType.String => {
+                    warn("printing token literal ({}): {}\n", @tagName(token.type), literal.String);
+                },
+            }
+        }
     }
 
     if (globals.had_error) {
@@ -68,10 +83,10 @@ fn repl() !void {
 
     // TODO(cgag): tmp
     var t = Token { .type = TokenType.LEFT_PAREN,
-                        .lexeme = "fuck",
-                        .line = 10,
-                        .literal = []u8{10},
-                      };
+                    .lexeme = "fuck",
+                    .line = 10,
+                    .literal = Literal { .Number = 10 },
+                  };
     const s = try t.to_string(alloc);
     defer alloc.free(s);
     try println(s);
