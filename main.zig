@@ -5,6 +5,7 @@ const os   = std.os;
 const io   = std.io;
 const ArrayList = @import("std").ArrayList;
 const globals = @import("globals.zig");
+const atof = @import("atof.zig");
 
 use @import("lex.zig");
 
@@ -14,11 +15,17 @@ use @import("lex.zig");
 var alloc = &std.heap.DirectAllocator.init().allocator;
 // defer std.heap.DirectAlloctor.deinit();
 
+
 pub fn main() !void {
     var args = try os.argsAlloc(alloc);
     defer os.argsFree(alloc, args);
     // drop the program name argument from the count
     const useful_args = args.len - 1;
+
+    warn("test: {}\n", @intCast(i64,0)>>1);
+    warn("test: {}\n", @intCast(i64,0)>>2);
+    warn("test: {}\n", @intCast(i64,0)>>10);
+    warn("test: {}\n", @intCast(i64,0)>>20);
 
     if (useful_args > 1) {
         try println("usage: lox [script]");
@@ -57,14 +64,19 @@ fn runFile(path: []const u8) !void {
 
 fn run(src: []const u8) !void {
     var scanner = Scanner.init(alloc, src);
-    var tokens = try scanner.scan();
+    const tokens = try scanner.scan();
 
     for (tokens.toSlice()) |token| {
         try println(@tagName(token.type));
         if (token.literal) |literal| {
             switch (literal) {
+                // TODO(cgag): fix compiler so that format just prints the active field in the union
                 LiteralType.Number => {
-                    warn("printing token literal ({}): {}\n", @tagName(token.type), literal.Number);
+                    warn("token: literal({}), lexeme({}): {.}\n",
+                         @tagName(token.type),
+                         token.lexeme,
+                         literal.Number,
+                         );
                 },
                 LiteralType.String => {
                     warn("printing token literal ({}): {}\n", @tagName(token.type), literal.String);

@@ -1,13 +1,12 @@
-const std  = @import("std");
-const warn = std.debug.warn;
-const mem  = std.mem;
-const os   = std.os;
-const io   = std.io;
-const ArrayList = @import("std").ArrayList;
-const globals = @import("globals.zig");
-const atof = @import("atof.zig");
+const std       = @import("std");
+const warn      = std.debug.warn;
+const mem       = std.mem;
+const os        = std.os;
+const io        = std.io;
+const ArrayList = std.ArrayList;
 
-pub var global: u32 = 2;
+const globals   = @import("globals.zig");
+const atof      = @import("atof.zig");
 
 pub const TokenType = enum {
     // single character
@@ -60,8 +59,6 @@ pub const Literal = union(LiteralType) {
 pub const Token = struct {
     type:    TokenType,
     lexeme:  []const u8,
-    // TODO(cgag): this should be a union or tagged union, so we can
-    // dodge all this weird casting we're trying to do like idiots
     literal: ?Literal,
     line:    u32,
 
@@ -70,10 +67,10 @@ pub const Token = struct {
                 literal: ?Literal,
                 line: u32) Token {
         return Token {
-            .type = token_type,
-            .lexeme = lexeme,
+            .type    = token_type,
+            .lexeme  = lexeme,
             .literal = literal,
-            .line = line,
+            .line    = line,
         };
     }
 
@@ -158,6 +155,7 @@ pub const Scanner = struct {
             '"' => { try self.string(); },
 
             else => {
+                // TODO(cgag): just use a range in the switch? '0'...'9'
                 if (is_digit(c)) {
                     _ = try self.number();
                 } else {
