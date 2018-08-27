@@ -171,7 +171,7 @@ pub const Decimal = struct {
         }
 
         // TODO(cgag): wrong precdedenc?
-        if (exp-info.bias >= (@intCast(i64,1)<<@intCast(u6, info.expbits)) - 1) {
+        if (exp-info.bias >= (i64(1)<<@intCast(u6, info.expbits)) - 1) {
             // TODO(cgag): handle for real
             warn("overflow!!!, exp - info.bias >= ...\n");
             return 0;
@@ -183,13 +183,13 @@ pub const Decimal = struct {
         if (mant == (@intCast(u64,2) << @intCast(u6,info.mantbits))) {
             mant >>= 1;
             exp += 1;
-            if (exp - info.bias >= (@intCast(i64, 1) << @intCast(u6, info.expbits)) - 1) {
+            if (exp - info.bias >= (i64(1) << @intCast(u6, info.expbits)) - 1) {
                 warn("overflow!!!!\n");
                 return 0;
             }
         }
 
-        if ((mant & (@intCast(u64, 1)<<@intCast(u6, info.mantbits))) == 0) {
+        if ((mant & (u64(1)<<@intCast(u6, info.mantbits))) == 0) {
             exp = info.bias;
         }
         return self.assemble_bits(info, mant, exp);
@@ -233,13 +233,13 @@ pub const Decimal = struct {
     fn assemble_bits(self: *Decimal, info: *const Float_Info, mant: u64, exp: i64) u64 {
         // TODO(cgag): is the bit fuckery precedence the same between go and zig
         // TODO(cgag): doesn't appear to be so at at all.
-        var bits: u64 = mant & ((@intCast(u64,1) << @intCast(u6, info.mantbits)) - @intCast(u64,1));
+        var bits: u64 = mant & ((u64(1) << @intCast(u6, info.mantbits)) - @intCast(u64,1));
         bits |= @intCast(u64, (exp-info.bias) & (
-            (@intCast(i64,1)<<@intCast(u6,info.expbits)) - @intCast(i64, 1)
+            (i64(1) << @intCast(u6,info.expbits)) - 1
         )) << @intCast(u6, info.mantbits);
         if (self.negative) {
             // TODO(cgag): is this cast correct, go doesn't specify the type of 1
-            bits |= @intCast(u64, 1) << @intCast(u6, info.mantbits) <<  @intCast(u6, info.expbits);
+            bits |= u64(1) << @intCast(u6, info.mantbits) <<  @intCast(u6, info.expbits);
         }
         return bits;
     }
