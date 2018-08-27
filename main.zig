@@ -11,11 +11,13 @@ use @import("lex.zig");
 
 // c_allocator doesn't work, causes ldd to crash with duplicate symbol "_start"
 // var alloc = std.heap.c_allocator;
-// TODO(cgag): don't have this as a global
 var alloc = &std.heap.DirectAllocator.init().allocator;
 // defer std.heap.DirectAlloctor.deinit();
 
 
+// TODO(cgag): don't have alloc as a global
+// TODO(cgag): make atof return an error union with a potential overflow
+// error instead of just returning 0 (!)
 pub fn main() !void {
     var args = try os.argsAlloc(alloc);
     defer os.argsFree(alloc, args);
