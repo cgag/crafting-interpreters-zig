@@ -1,19 +1,9 @@
 var language = "lox";
 if x >= 10;
-if x >= 10.0;
 if x >= 10.1;
 if x >= 0.89723;
-// for some reason this causes an infinite loop:
-// yes: if x >= 100.2
-// no: 1.2
-// yes: 1.1
+yes: 1.1
 if x >= 1.1
-98712382.2198723498738
-000000001.99873000
-0.01
-0.02
-0.03
-0.04
 0.08
 0.028
 99.9999999

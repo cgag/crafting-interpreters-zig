@@ -4,9 +4,23 @@ const mem       = std.mem;
 const os        = std.os;
 const io        = std.io;
 const ArrayList = std.ArrayList;
+const Map       = std.AutoHashMap;
 
 const globals   = @import("globals.zig");
 const atof      = @import("atof.zig");
+
+// TODO(cgag): compiler bug? this causes an infinite loop somehow
+// comptime {
+//     var direct_alloc = &std.heap.DirectAllocator.init().allocator;
+//     var keywords = Map([]const u8, TokenType).init(direct_alloc);
+//     keywords.put("and", TokenType.AND);
+// }
+
+var direct_alloc = &std.heap.DirectAllocator.init().allocator;
+comptime {
+    var keywords = Map([]const u8, TokenType).init(direct_alloc);
+    keywords.put("and", TokenType.AND);
+}
 
 pub const TokenType = enum {
     // single character
@@ -117,25 +131,34 @@ pub const Scanner = struct {
     fn scan_token(self: *Scanner) !void {
         var c = self.advance();
         switch (c) {
-            '(' => { try self.add_simple_token(TokenType.LEFT_PAREN); },
+            '(' => { try self.add_simple_token(TokenType.LEFT_PAREN);  },
             ')' => { try self.add_simple_token(TokenType.RIGHT_PAREN); },
-            '{' => { try self.add_simple_token(TokenType.LEFT_BRACE); },
+            '{' => { try self.add_simple_token(TokenType.LEFT_BRACE);  },
             '}' => { try self.add_simple_token(TokenType.RIGHT_BRACE); },
-            ',' => { try self.add_simple_token(TokenType.COMMA); },
-            '.' => { try self.add_simple_token(TokenType.DOT); },
-            '-' => { try self.add_simple_token(TokenType.MINUS); },
-            '+' => { try self.add_simple_token(TokenType.PLUS); },
-            ';' => { try self.add_simple_token(TokenType.SEMICOLON); },
-            '*' => { try self.add_simple_token(TokenType.STAR); },
+            ',' => { try self.add_simple_token(TokenType.COMMA);       },
+            '.' => { try self.add_simple_token(TokenType.DOT);         },
+            '-' => { try self.add_simple_token(TokenType.MINUS);       },
+            '+' => { try self.add_simple_token(TokenType.PLUS);        },
+            ';' => { try self.add_simple_token(TokenType.SEMICOLON);   },
+            '*' => { try self.add_simple_token(TokenType.STAR);        },
 
-            '!' => { var token = if (self.match('=')) TokenType.BANG_EQUAL else TokenType.BANG;
-                     try self.add_simple_token(token); },
-            '=' => { var token = if (self.match('=')) TokenType.EQUAL_EQUAL else TokenType.EQUAL;
-                     try self.add_simple_token(token); },
-            '<' => { var token = if (self.match('=')) TokenType.LESS_EQUAL else TokenType.LESS;
-                     try self.add_simple_token(token); },
-            '>' => { var token = if (self.match('=')) TokenType.GREATER_EQUAL else TokenType.GREATER;
-                     try self.add_simple_token(token); },
+            '!' => {
+                var token = if (self.match('=')) TokenType.BANG_EQUAL else TokenType.BANG;
+                try self.add_simple_token(token);
+            },
+            '=' => {
+                var token = if (self.match('=')) TokenType.EQUAL_EQUAL else TokenType.EQUAL;
+                try self.add_simple_token(token);
+             },
+            '<' => {
+                var token = if (self.match('=')) TokenType.LESS_EQUAL else TokenType.LESS;
+                try self.add_simple_token(token);
+            },
+            '>' => {
+                var token = if (self.match('=')) TokenType.GREATER_EQUAL else TokenType.GREATER;
+                try self.add_simple_token(token);
+            },
+
             // comments and whitespace
             '/' => {
                 if (self.match('/')) {
@@ -154,7 +177,6 @@ pub const Scanner = struct {
 
             '"' => { try self.string(); },
             '0'...'9' => {
-                warn("in number: {c}\n", c);
                 _ = try self.number();
             },
 
