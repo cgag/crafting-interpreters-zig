@@ -12,11 +12,12 @@ const Float_Info = struct {
 // const float32_info = Float_Info{.mantbits = 23, .expbits = 8,  .bias = -127};
 const float64_info = Float_Info{.mantbits = 52, .expbits = 11, .bias = -1023};
 
-const DecimalError = error {
+const ParseFloat = error {
     NoDigits,
     EmptyString,
     MultipleDots,
     ContainedInvalidCharacters,
+    Overflow,
 };
 
 pub const Decimal = struct {
@@ -42,7 +43,7 @@ pub const Decimal = struct {
         self.truncated = false;
 
         if (i >= s.len) {
-            return DecimalError.EmptyString;
+            return ParseFloat.EmptyString;
         }
 
         switch (s[i]) {
@@ -57,7 +58,7 @@ pub const Decimal = struct {
             switch (s[i]) {
                 '.' => {
                     if (saw_dot) {
-                        return DecimalError.MultipleDots;
+                        return ParseFloat.MultipleDots;
                     }
                     saw_dot = true;
                     self.decimal_point_index = self.num_digits;
@@ -83,13 +84,13 @@ pub const Decimal = struct {
                     // I think it's this way in the go code because of the processing of scientific notation further manipulates
                     // the index 'i', and then checks to be sure i == s.len.  Because we're not supporting that we could just return
                     // an error here, but I want to stay as true to the go as possible to flesh this out later.
-                        break;
+                    break;
                 }
             }
         }
 
         if (!saw_digits) {
-            return DecimalError.NoDigits;
+            return ParseFloat.NoDigits;
         }
 
         if (!saw_dot) {
@@ -99,7 +100,7 @@ pub const Decimal = struct {
         // here would be the exponential notation handling but i'm leaving it out for now
 
         if (i != s.len) {
-            return DecimalError.ContainedInvalidCharacters;
+            return ParseFloat.ContainedInvalidCharacters;
         }
     }
 
@@ -111,7 +112,7 @@ pub const Decimal = struct {
 
     // TODO(cgag): how do we communicate overflow?  as an error? return a struct?
     // TODO(cgag): just going to panic for now or something
-    pub fn float_bits(self: *Decimal, info: *const Float_Info) u64 {
+    pub fn float_bits(self: *Decimal, info: *const Float_Info) ParseFloat!u64 {
         var exp: i64 = undefined;
         var mant: u64 = undefined;
 
@@ -126,8 +127,7 @@ pub const Decimal = struct {
         // obvious overflow/underflow
         // these bounds are for 64 bit floats, wkill have to change for 80 bit in the future
         if (self.decimal_point_index > 310) {
-            // TODO(cgag): real handling
-            warn("welp, overflow\n");
+            return ParseFloat.Overflow;
         }
         if (self.decimal_point_index < -330) {
             mant = 0;
@@ -174,7 +174,7 @@ pub const Decimal = struct {
         if (exp-info.bias >= (i64(1)<<@intCast(u6, info.expbits)) - 1) {
             // TODO(cgag): handle for real
             warn("overflow!!!, exp - info.bias >= ...\n");
-            return 0;
+            return ParseFloat.Overflow;
         }
 
         self.shift(@intCast(i64, 1 + info.mantbits));
@@ -184,8 +184,7 @@ pub const Decimal = struct {
             mant >>= 1;
             exp += 1;
             if (exp - info.bias >= (i64(1) << @intCast(u6, info.expbits)) - 1) {
-                warn("overflow!!!!\n");
-                return 0;
+                return ParseFloat.Overflow;
             }
         }
 
@@ -408,14 +407,11 @@ fn prefix_is_less_than(b: []u8, s: []const u8) bool {
     return false;
 }
 
-pub fn atof(s: []const u8) DecimalError!f64 {
+pub fn atof(s: []const u8) ParseFloat!f64 {
     var d = Decimal.init();
     try d.set(s);
 
-    // TODO(cgag): tmp
-    d.print();
-
-    var bits = d.float_bits(&float64_info);
+    var bits = try d.float_bits(&float64_info);
     return @bitCast(f64, bits);
 }
 
