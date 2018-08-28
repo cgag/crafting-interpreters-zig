@@ -8,6 +8,7 @@ const globals = @import("globals.zig");
 const atof = @import("atof.zig");
 
 use @import("lex.zig");
+//
 
 // c_allocator doesn't work, causes ldd to crash with duplicate symbol "_start"
 // var alloc = std.heap.c_allocator;
@@ -23,11 +24,6 @@ pub fn main() !void {
     defer os.argsFree(alloc, args);
     // drop the program name argument from the count
     const useful_args = args.len - 1;
-
-    warn("test: {}\n", @intCast(i64,0)>>1);
-    warn("test: {}\n", @intCast(i64,0)>>2);
-    warn("test: {}\n", @intCast(i64,0)>>10);
-    warn("test: {}\n", @intCast(i64,0)>>20);
 
     if (useful_args > 1) {
         try println("usage: lox [script]");
@@ -69,7 +65,7 @@ fn run(src: []const u8) !void {
     const tokens = try scanner.scan();
 
     for (tokens.toSlice()) |token| {
-        try println(@tagName(token.type));
+        warn("{} ({})\n", @tagName(token.type), token.lexeme);
         if (token.literal) |literal| {
             switch (literal) {
                 // TODO(cgag): fix compiler so that format just prints the active field in the union

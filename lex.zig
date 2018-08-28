@@ -153,12 +153,16 @@ pub const Scanner = struct {
             '\n' => { self.line += 1; },
 
             '"' => { try self.string(); },
+            '0'...'9' => {
+                warn("in number: {c}\n", c);
+                _ = try self.number();
+            },
 
             else => {
-                // TODO(cgag): just use a range in the switch? '0'...'9'
-                if (is_digit(c)) {
-                    _ = try self.number();
+                if (is_alpha(c))  {
+                    try self.identifier();
                 } else {
+                    warn("unexpected char: {c}\n", c);
                     err(self.line, "Unexpected character");
                 }
             },
@@ -181,6 +185,15 @@ pub const Scanner = struct {
 
         const lit = Literal { .String = self.source[self.start+1..self.current-1] };
         try self.add_token(TokenType.STRING, lit);
+    }
+
+    fn identifier(self: *Scanner) !void {
+        while (is_alphanumeric(self.peek())) {
+            _ = self.advance();
+        }
+
+        // const lit = Literal { .String = self.source[self.start...self.current] };
+        try self.add_simple_token(TokenType.IDENTIFIER);
     }
 
     fn number(self: *Scanner) !void {
@@ -236,6 +249,16 @@ pub const Scanner = struct {
 
 fn is_digit(c: u8) bool {
     return c >= '0' and c <= '9';
+}
+
+fn is_alpha(c: u8) bool {
+    return (c >= 'a' and c <= 'z') or
+           (c >= 'A' and c <= 'Z') or
+           (c == '_');
+}
+
+fn is_alphanumeric(c: u8) bool {
+    return is_alpha(c) or is_digit(c);
 }
 
 fn err(line_number: i64, msg: []const u8) void {
