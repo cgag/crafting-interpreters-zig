@@ -9,19 +9,6 @@ const Map       = std.AutoHashMap;
 const globals   = @import("globals.zig");
 const atof      = @import("atof.zig");
 
-// TODO(cgag): compiler bug? this causes an infinite loop somehow
-// comptime {
-//     var direct_alloc = &std.heap.DirectAllocator.init().allocator;
-//     var keywords = Map([]const u8, TokenType).init(direct_alloc);
-//     keywords.put("and", TokenType.AND);
-// }
-
-var direct_alloc = &std.heap.DirectAllocator.init().allocator;
-comptime {
-    var keywords = Map([]const u8, TokenType).init(direct_alloc);
-    keywords.put("and", TokenType.AND);
-}
-
 pub const TokenType = enum {
     // single character
     LEFT_PAREN,
@@ -107,15 +94,39 @@ pub const Scanner = struct {
     start:   u32,
     current: u32,
     line:    u32,
+    keywords: Map([]const u8, TokenType),
 
-    pub fn init(allocator: *mem.Allocator, source: []const u8) Scanner {
+    pub fn init(allocator: *mem.Allocator, source: []const u8) !Scanner {
+        var keywords = Map([]const u8, TokenType).init(allocator);
+        _ = try keywords.put("and",    TokenType.AND);
+        _ = try keywords.put("class",  TokenType.CLASS);
+        _ = try keywords.put("else",   TokenType.ELSE);
+        _ = try keywords.put("false",  TokenType.FALSE);
+        _ = try keywords.put("for",    TokenType.FOR);
+        _ = try keywords.put("fun",    TokenType.FUN);
+        _ = try keywords.put("if",     TokenType.IF);
+        _ = try keywords.put("nil",    TokenType.NIL);
+        _ = try keywords.put("or",     TokenType.OR);
+        _ = try keywords.put("print",  TokenType.PRINT);
+        _ = try keywords.put("return", TokenType.RETURN);
+        _ = try keywords.put("super",  TokenType.SUPER);
+        _ = try keywords.put("this",   TokenType.THIS);
+        _ = try keywords.put("true",   TokenType.TRUE);
+        _ = try keywords.put("var",    TokenType.VAR);
+        _ = try keywords.put("while",  TokenType.WHILE);
+
         return Scanner {
-            .source  = source,
-            .tokens  = ArrayList(Token).init(allocator),
-            .start   = 0,
-            .current = 0,
-            .line    = 0,
+            .source   = source,
+            .tokens   = ArrayList(Token).init(allocator),
+            .start    = 0,
+            .current  = 0,
+            .line     = 0,
+            .keywords = keywords,
         };
+    }
+
+    pub fn deinit(self: *Scanner) void {
+        self.keywords.deinit();
     }
 
     pub fn scan(self: *Scanner) !ArrayList(Token) {
@@ -182,7 +193,7 @@ pub const Scanner = struct {
 
             else => {
                 if (is_alpha(c))  {
-                    try self.identifier();
+                    try self.identifier_or_keyword();
                 } else {
                     warn("unexpected char: {c}\n", c);
                     err(self.line, "Unexpected character");
@@ -209,13 +220,20 @@ pub const Scanner = struct {
         try self.add_token(TokenType.STRING, lit);
     }
 
-    fn identifier(self: *Scanner) !void {
+    fn identifier_or_keyword(self: *Scanner) !void {
         while (is_alphanumeric(self.peek())) {
             _ = self.advance();
         }
 
-        // const lit = Literal { .String = self.source[self.start...self.current] };
-        try self.add_simple_token(TokenType.IDENTIFIER);
+        const text = self.source[self.start..self.current];
+
+        // check for reserved words
+        // TODO(cgag): lowercase??
+        if (self.keywords.get(text)) |reserved_token_type_kv| {
+            try self.add_simple_token(reserved_token_type_kv.value);
+        } else {
+            try self.add_simple_token(TokenType.IDENTIFIER);
+        }
     }
 
     fn number(self: *Scanner) !void {

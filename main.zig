@@ -61,7 +61,9 @@ fn runFile(path: []const u8) !void {
 }
 
 fn run(src: []const u8) !void {
-    var scanner = Scanner.init(alloc, src);
+    var scanner = try Scanner.init(alloc, src);
+    defer scanner.deinit();
+
     const tokens = try scanner.scan();
 
     for (tokens.toSlice()) |token| {
@@ -91,24 +93,20 @@ fn run(src: []const u8) !void {
 fn repl() !void {
     var line_buf: [50000]u8 = undefined;
 
-    // TODO(cgag): tmp
-    var t = Token { .type = TokenType.LEFT_PAREN,
-                    .lexeme = "fuck",
-                    .line = 10,
-                    .literal = Literal { .Number = 10 },
-                  };
-    const s = try t.to_string(alloc);
-    defer alloc.free(s);
-    try println(s);
-
-    //---
     while (true) {
+        for (line_buf) |_, i| line_buf[i] = 0;
         try print("> ");
         _ = try io.readLine(line_buf[0..]);
         if (line_buf[0] != 0) {
-            try run(line_buf);
+            var end_index: u64 = 0;
+            for (line_buf) |b, i| {
+                if (line_buf[i] == 0) {
+                    end_index = i;
+                    break;
+                }
+            }
+            try run(line_buf[0..end_index]);
         }
-        for (line_buf) |_, i| line_buf[i] = 0;
         globals.had_error = false;
     }
 }

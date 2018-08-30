@@ -97,7 +97,8 @@ pub const Decimal = struct {
             self.decimal_point_index = self.num_digits;
         }
 
-        // here would be the exponential notation handling but i'm leaving it out for now
+        // TODO(cgag): here would be the exponential notation handling but i'm leaving it out for now
+        // TODO(cgag): don't forget we left out special cases like NaN and inf.
 
         if (i != s.len) {
             return ParseFloat.ContainedInvalidCharacters;
@@ -170,7 +171,7 @@ pub const Decimal = struct {
             exp += n;
         }
 
-        // TODO(cgag): wrong precdedenc?
+        // TODO(cgag): wrong precedence?
         if (exp-info.bias >= (i64(1)<<@intCast(u6, info.expbits)) - 1) {
             // TODO(cgag): handle for real
             warn("overflow!!!, exp - info.bias >= ...\n");
