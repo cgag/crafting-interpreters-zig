@@ -8,7 +8,8 @@ const globals = @import("globals.zig");
 const atof = @import("atof.zig");
 
 use @import("lex.zig");
-//
+// TODO(cgag): tmp use for forcing compiler errors
+const Parser = @import("parser.zig");
 
 // c_allocator doesn't work, causes ldd to crash with duplicate symbol "_start"
 // var alloc = std.heap.c_allocator;
@@ -20,6 +21,9 @@ var alloc = &std.heap.DirectAllocator.init().allocator;
 // TODO(cgag): make atof return an error union with a potential overflow
 // error instead of just returning 0 (!)
 pub fn main() !void {
+    var e = Parser.parse();
+    warn("expr: {}\n", e);
+
     var args = try os.argsAlloc(alloc);
     defer os.argsFree(alloc, args);
     // drop the program name argument from the count
@@ -100,7 +104,7 @@ fn repl() !void {
         if (line_buf[0] != 0) {
             var end_index: u64 = 0;
             for (line_buf) |b, i| {
-                if (line_buf[i] == 0) {
+                if (b == 0) {
                     end_index = i;
                     break;
                 }

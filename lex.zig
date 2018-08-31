@@ -39,10 +39,7 @@ pub const TokenType = enum {
     EOF
 };
 
-pub var x: u32 = 0;
-
 pub fn global_var_test() void {
-    warn("x: {}\n", x);
     warn("had-erro: {}\n", main.had_error);
     main.had_error = true;
 }

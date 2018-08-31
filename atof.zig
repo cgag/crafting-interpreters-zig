@@ -52,7 +52,7 @@ pub const Decimal = struct {
             else => {}
         }
 
-        var saw_dot = false;
+        var saw_dot    = false;
         var saw_digits = false;
         while (i < s.len) : (i += 1) {
             switch (s[i]) {
@@ -171,7 +171,6 @@ pub const Decimal = struct {
             exp += n;
         }
 
-        // TODO(cgag): wrong precedence?
         if (exp-info.bias >= (i64(1)<<@intCast(u6, info.expbits)) - 1) {
             // TODO(cgag): handle for real
             warn("overflow!!!, exp - info.bias >= ...\n");
