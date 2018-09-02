@@ -80,10 +80,7 @@ pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrint
 
             break :blk try fmt.allocPrint(a, "({} {} {})", name, left, right);
         },
-        ExprType.Literal => blk: {
-            // break :blk try fmt.allocPrint(a, "({})", e.Binary.token.type);
-            unreachable;
-        },
+        ExprType.Literal => unreachable,
         ExprType.Grouping => blk: {
             var printed_expr = try expr_print(a, e.Grouping.expr.*);
             defer a.free(printed_expr);
@@ -126,6 +123,6 @@ pub fn parse() !Expr {
     // TODO(cgag): expec
     // var s = try expr_print(alloc, e);
     var s = try expr_print(alloc, e2);
-    warn("printed expr: {}\n", s);
+    // warn("printed expr: {}\n", s);
     return e;
 }
