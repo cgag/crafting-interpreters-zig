@@ -2,10 +2,12 @@ const std  = @import("std");
 const warn = std.debug.warn;
 const fmt  = std.fmt;
 const mem  = std.mem;
+const io   = std.io;
+const ArrayList = std.ArrayList;
 
-const Token        = @import("lex.zig").Token;
-const TokenType    = @import("lex.zig").TokenType;
-const TokenLiteral = @import("lex.zig").Literal;
+const Token            = @import("lex.zig").Token;
+const TokenType        = @import("lex.zig").TokenType;
+const TokenLiteral     = @import("lex.zig").Literal;
 const TokenLiteralType = @import("lex.zig").LiteralType;
 
 // TODO(cgag): get rid of these globals
@@ -29,7 +31,7 @@ pub const Expr = union(ExprType) {
 // parser.zig:17:20: error: struct 'Binary' contains itself, which sort of
 // makes sense, but it's indirect and confusing.
 pub const Binary = struct {
-    left: *Expr,
+    left:  *Expr,
     right: *Expr,
     token: Token,
 };
@@ -96,7 +98,53 @@ pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrint
     return buf;
 }
 
-pub fn parse() !Expr {
+pub const Parser = struct {
+    tokens: ArrayList(Token),
+    current: u64,
+
+    pub fn init(tokens: ArrayList(Token)) Parser {
+        return Parser{
+            .tokens = tokens,
+            .current = 0,
+        };
+    }
+
+    fn expression(self: *Parser) Expr {
+        return self.equality();
+    }
+
+    // equality → comparison ( ( "!=" | "==" ) comparison )* ;
+    fn equality(self: *Parser) Expr {
+        var e = self.comparison();
+
+        while (self.match(TokenType.BANG_EQUAL, TokenType.EQUAL_EQUAL)) {
+            var operator: Token = self.previous();
+            var right = self.comparison();
+            e = Binary {
+                .left = e,
+                .operator = operator,
+                .right = right,
+            };
+        }
+
+        return e;
+    }
+
+    fn comparison() Expr {
+        return Literal{};
+    }
+
+    fn match(self: *Parser, token_targets: []TokenType) bool {
+        return false;
+    }
+
+    pub fn parse(self: *Parser) Expr {
+        return self.expression();
+    }
+};
+
+
+test "parser whatever" {
     var l = Expr{
         .Literal = Literal {
             .value = TokenLiteral{ .String = "left-value" },
@@ -114,15 +162,15 @@ pub fn parse() !Expr {
             .token = Token.init(TokenType.AND, "and", null, 10),
         }
     };
-    var e2 = Expr {
-        .Unary = Unary {
-            .right = &r,
-            .token = Token.init(TokenType.MINUS, "-", null, 10),
-        }
-    };
-    // TODO(cgag): expec
-    // var s = try expr_print(alloc, e);
-    var s = try expr_print(alloc, e2);
-    // warn("printed expr: {}\n", s);
-    return e;
+    var s = try expr_print(alloc, e);
+    warn("printed expr: {}\n", s);
+
+    {
+        const Scanner = @import("lex.zig").Scanner;
+        var src = try io.readFileAlloc(alloc, "test/parse.lox");
+        var scanner = try Scanner.init(alloc, src);
+        var tokens = try scanner.scan();
+        var p = Parser.init(tokens);
+        _ = p.parse();
+    }
 }
