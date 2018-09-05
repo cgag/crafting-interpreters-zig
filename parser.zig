@@ -33,7 +33,7 @@ pub const Expr = union(ExprType) {
 pub const Binary = struct {
     left:  *Expr,
     right: *Expr,
-    token: Token,
+    operator: Token,
 };
 
 pub const Literal = struct {
@@ -52,7 +52,7 @@ pub const Unary = struct {
 // caller owns returned memory
 pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
     const s = switch (e) {
-        ExprType.Binary => try parenthesize(a, @tagName(e.Binary.token.type), e),
+        ExprType.Binary => try parenthesize(a, @tagName(e.Binary.operator.type), e),
         ExprType.Literal => blk: {
             switch(e.Literal.value) {
                 TokenLiteralType.String => {
@@ -72,7 +72,6 @@ pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
 // caller owns returned memory
 pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrintError![]const u8 {
     // TODO(cgag): is there a zig equiv to stringbuilder?
-    // TODO(cgag): how the hell do you free recursively allocated memory?
     const buf = switch (e) {
         ExprType.Binary => blk: {
             var left = try expr_print(a, e.Binary.left.*);
@@ -114,28 +113,58 @@ pub const Parser = struct {
     }
 
     // equality → comparison ( ( "!=" | "==" ) comparison )* ;
+    // TODO(cgag): need to think about how all this memory is going to work,
+    // I think we're putting things like "e" on the stack and taking their address.  Dangerous.
     fn equality(self: *Parser) Expr {
         var e = self.comparison();
 
-        while (self.match(TokenType.BANG_EQUAL, TokenType.EQUAL_EQUAL)) {
+        const target_tokens = []TokenType{TokenType.BANG_EQUAL, TokenType.EQUAL_EQUAL};
+        while (self.match(target_tokens[0..])) {
             var operator: Token = self.previous();
             var right = self.comparison();
-            e = Binary {
-                .left = e,
-                .operator = operator,
-                .right = right,
-            };
+            e = Expr {
+                    .Binary = Binary {
+                        .left = &e,
+                        .operator = operator,
+                        .right = &right,
+                    },
+                };
         }
 
         return e;
     }
 
-    fn comparison() Expr {
-        return Literal{};
+    fn comparison(self: *Parser) Expr {
+        return Expr{.Literal=Literal{.value=TokenLiteral{.String="hello"}}};
     }
 
-    fn match(self: *Parser, token_targets: []TokenType) bool {
+    // TODO(cgag): varargs
+    fn match(self: *Parser, token_targets: []const TokenType) bool {
         return false;
+    }
+
+    fn check(self: *Parser, type: TokenType) bool {
+        if (self.is_at_end()) { return false; }
+        return self.peek().type == type;
+    }
+
+    fn previous(self: *Parser) Token {
+        return self.tokens.at(self.current - 1);
+    }
+
+    fn advance(self: *Parser) void {
+        if (!self.is_at_end) {
+            self.current += 1;
+        }
+        return self.previous();
+    }
+
+    fn is_at_end(self: *Parser) bool {
+        return self.peek().type == TokenType.EOF;
+    }
+
+    fn peek(self: *Parser) Token {
+        return self.tokens.at(current);
     }
 
     pub fn parse(self: *Parser) Expr {
@@ -159,18 +188,20 @@ test "parser whatever" {
         .Binary = Binary{
             .left  = &l,
             .right = &r,
-            .token = Token.init(TokenType.AND, "and", null, 10),
+            .operator = Token.init(TokenType.AND, "+", null, 10),
         }
     };
     var s = try expr_print(alloc, e);
-    warn("printed expr: {}\n", s);
+    warn("\n--\nprinted expr: {}\n", s);
 
     {
         const Scanner = @import("lex.zig").Scanner;
-        var src = try io.readFileAlloc(alloc, "test/parse.lox");
+        var src     = try io.readFileAlloc(alloc, "test/parse.lox");
         var scanner = try Scanner.init(alloc, src);
-        var tokens = try scanner.scan();
-        var p = Parser.init(tokens);
-        _ = p.parse();
+        var tokens  = try scanner.scan();
+        var p       = Parser.init(tokens);
+        var parsed_expr = p.parse();
+        var printed_expr = try expr_print(alloc, parsed_expr);
+        warn("printed real expr: {}\n", printed_expr);
     }
 }
