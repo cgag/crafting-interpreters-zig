@@ -39,11 +39,6 @@ pub const TokenType = enum {
     EOF
 };
 
-pub fn global_var_test() void {
-    warn("had-erro: {}\n", main.had_error);
-    main.had_error = true;
-}
-
 pub const LiteralType = enum {
     String,
     Number,

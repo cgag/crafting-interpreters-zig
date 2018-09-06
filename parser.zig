@@ -30,6 +30,7 @@ pub const Expr = union(ExprType) {
 // TODO(cgag): if left and right aren't pointers, we get the error
 // parser.zig:17:20: error: struct 'Binary' contains itself, which sort of
 // makes sense, but it's indirect and confusing.
+// TODO(cgag): how do we free this
 pub const Binary = struct {
     left:  *Expr,
     right: *Expr,
@@ -100,33 +101,41 @@ pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrint
 pub const Parser = struct {
     tokens: ArrayList(Token),
     current: u64,
+    allocator: *mem.Allocator,
 
-    pub fn init(tokens: ArrayList(Token)) Parser {
+    pub fn init(allocator: *mem.Allocator, tokens: ArrayList(Token)) Parser {
         return Parser{
             .tokens = tokens,
             .current = 0,
+            .allocator = allocator,
         };
     }
 
-    fn expression(self: *Parser) Expr {
-        return self.equality();
+    // TODO(cgag): maybe these should all be returning *Expr, not Expr?
+    fn expression(self: *Parser) !Expr {
+        return try self.equality();
     }
 
     // equality → comparison ( ( "!=" | "==" ) comparison )* ;
     // TODO(cgag): need to think about how all this memory is going to work,
     // I think we're putting things like "e" on the stack and taking their address.  Dangerous.
-    fn equality(self: *Parser) Expr {
+    fn equality(self: *Parser) !Expr {
         var e = self.comparison();
 
         const target_tokens = []TokenType{TokenType.BANG_EQUAL, TokenType.EQUAL_EQUAL};
         while (self.match(target_tokens[0..])) {
-            var operator: Token = self.previous();
+            // TODO(cgag): these need to be on the heap?? how to copy them over in zig?
+            var operator = self.previous();
             var right = self.comparison();
+            var right_mem = try self.allocator.alloc(Expr, 1);
+            right_mem[0] = right;
+            var tmp = &right_mem[0];
+            self.allocator.free(tmp[0..]);
             e = Expr {
                     .Binary = Binary {
                         .left = &e,
                         .operator = operator,
-                        .right = &right,
+                        .right = &right_mem[0],
                     },
                 };
         }
@@ -139,21 +148,28 @@ pub const Parser = struct {
     }
 
     // TODO(cgag): varargs
-    fn match(self: *Parser, token_targets: []const TokenType) bool {
+    fn match(self: *Parser, target_types: []const TokenType) bool {
+        for (target_types) |target_type| {
+            if (self.check(target_type)) {
+                // consume it
+                _ = self.advance();
+                return true;
+            }
+        }
         return false;
     }
 
-    fn check(self: *Parser, type: TokenType) bool {
+    fn check(self: *Parser, target_type: TokenType) bool {
         if (self.is_at_end()) { return false; }
-        return self.peek().type == type;
+        return self.peek().type == target_type;
     }
 
     fn previous(self: *Parser) Token {
         return self.tokens.at(self.current - 1);
     }
 
-    fn advance(self: *Parser) void {
-        if (!self.is_at_end) {
+    fn advance(self: *Parser) Token {
+        if (!self.is_at_end()) {
             self.current += 1;
         }
         return self.previous();
@@ -164,11 +180,11 @@ pub const Parser = struct {
     }
 
     fn peek(self: *Parser) Token {
-        return self.tokens.at(current);
+        return self.tokens.at(self.current);
     }
 
-    pub fn parse(self: *Parser) Expr {
-        return self.expression();
+    pub fn parse(self: *Parser) !Expr {
+        return try self.expression();
     }
 };
 
@@ -199,8 +215,8 @@ test "parser whatever" {
         var src     = try io.readFileAlloc(alloc, "test/parse.lox");
         var scanner = try Scanner.init(alloc, src);
         var tokens  = try scanner.scan();
-        var p       = Parser.init(tokens);
-        var parsed_expr = p.parse();
+        var p       = Parser.init(alloc, tokens);
+        var parsed_expr = try p.parse();
         var printed_expr = try expr_print(alloc, parsed_expr);
         warn("printed real expr: {}\n", printed_expr);
     }
