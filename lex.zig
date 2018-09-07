@@ -42,11 +42,19 @@ pub const TokenType = enum {
 pub const LiteralType = enum {
     String,
     Number,
+    // TODO(cgag): these are only used in parser.zig,
+    // we need to etiehr fully seperate this and the parser,
+    // or usnify them
+    Bool,
+    Nil,
 };
 
 pub const Literal = union(LiteralType) {
     String: []const u8,
     Number: f64,
+    Bool: bool,
+    // TODO(cgag): unused value
+    Nil: bool,
 };
 
 pub const Token = struct {

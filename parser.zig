@@ -13,6 +13,11 @@ const TokenLiteralType = @import("lex.zig").LiteralType;
 // TODO(cgag): get rid of these globals
 var alloc = &std.heap.DirectAllocator.init().allocator;
 
+
+pub const ParserError = error{
+    OutOfMemory
+};
+
 pub const ExprType = enum {
     Binary,
     Literal,
@@ -46,7 +51,7 @@ pub const Grouping = struct {
 };
 
 pub const Unary = struct {
-    token: Token,
+    operator: Token,
     right: *Expr,
 };
 
@@ -61,11 +66,17 @@ pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
                 },
                 TokenLiteralType.Number => {
                     break :blk try fmt.allocPrint(a, "{.}", e.Literal.value.Number);
+                },
+                TokenLiteralType.Bool => {
+                    break :blk try fmt.allocPrint(a, "{}", e.Literal.value.Bool);
+                },
+                TokenLiteralType.Nil => {
+                    break :blk try fmt.allocPrint(a, "{}", "NIL");
                 }
             }
         },
         ExprType.Grouping => try parenthesize(a, "group", e),
-        ExprType.Unary => try parenthesize(a, e.Unary.token.lexeme, e),
+        ExprType.Unary => try parenthesize(a, e.Unary.operator.lexeme, e),
     };
     return s;
 }
@@ -75,7 +86,7 @@ pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrint
     // TODO(cgag): is there a zig equiv to stringbuilder?
     const buf = switch (e) {
         ExprType.Binary => blk: {
-            var left = try expr_print(a, e.Binary.left.*);
+            var left  = try expr_print(a, e.Binary.left.*);
             var right = try expr_print(a, e.Binary.right.*);
             defer a.free(left);
             defer a.free(right);
@@ -84,6 +95,8 @@ pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrint
         },
         ExprType.Literal => unreachable,
         ExprType.Grouping => blk: {
+            warn("how'd we even get in here??\n");
+            warn("grouping: {}", e);
             var printed_expr = try expr_print(a, e.Grouping.expr.*);
             defer a.free(printed_expr);
             break :blk try fmt.allocPrint(a, "({} {})", name, printed_expr);
@@ -105,8 +118,8 @@ pub const Parser = struct {
 
     pub fn init(allocator: *mem.Allocator, tokens: ArrayList(Token)) Parser {
         return Parser{
-            .tokens = tokens,
-            .current = 0,
+            .tokens    = tokens,
+            .current   = 0,
             .allocator = allocator,
         };
     }
@@ -120,31 +133,197 @@ pub const Parser = struct {
     // TODO(cgag): need to think about how all this memory is going to work,
     // I think we're putting things like "e" on the stack and taking their address.  Dangerous.
     fn equality(self: *Parser) !Expr {
-        var e = self.comparison();
+        const left = try self.allocator.createOne(Expr);
+        left.* = try self.comparison();
+        warn("left: {}\n", left);
 
         const target_tokens = []TokenType{TokenType.BANG_EQUAL, TokenType.EQUAL_EQUAL};
         while (self.match(target_tokens[0..])) {
             // TODO(cgag): these need to be on the heap?? how to copy them over in zig?
             var operator = self.previous();
-            var right = self.comparison();
-            var right_mem = try self.allocator.alloc(Expr, 1);
-            right_mem[0] = right;
-            var tmp = &right_mem[0];
-            self.allocator.free(tmp[0..]);
-            e = Expr {
+            warn("previous: {}\n", operator);
+            var right = try self.allocator.createOne(Expr);
+            right.* = try self.comparison();
+            left.* = Expr {
                     .Binary = Binary {
-                        .left = &e,
+                        .left = left,
                         .operator = operator,
-                        .right = &right_mem[0],
+                        .right = right,
                     },
                 };
         }
 
-        return e;
+        return left.*;
     }
 
-    fn comparison(self: *Parser) Expr {
-        return Expr{.Literal=Literal{.value=TokenLiteral{.String="hello"}}};
+    fn comparison(self: *Parser) !Expr {
+        warn("in comparision\n");
+        const e = try self.allocator.createOne(Expr);
+        e.* = try self.addition();
+
+        const target_tokens = []TokenType{
+            TokenType.GREATER,
+            TokenType.GREATER_EQUAL,
+            TokenType.LESS,
+            TokenType.LESS_EQUAL,
+        };
+        while(self.match(target_tokens[0..])) {
+            var operator = self.previous();
+            var right = try self.allocator.createOne(Expr);
+            right.* = try self.addition();
+            warn("e currently: {}", e);
+            e.* = Expr {
+                .Binary = Binary {
+                    .left = e,
+                    .operator = operator,
+                    .right = right,
+                }
+            };
+        }
+
+        // warn("in comparision returning left: {}\n", e.Binary.left);
+        // warn("in comparision returning right: {}\n", e);
+        // warn("in comparision returning e: {}\n", e);
+
+        return e.*;
+    }
+
+    fn addition(self: *Parser) !Expr {
+        warn("in addition\n");
+        const e = try self.allocator.createOne(Expr);
+        e.* = try self.multiplication();
+
+        const target_tokens = []TokenType{TokenType.MINUS, TokenType.PLUS};
+        while (self.match(target_tokens[0..])) {
+            var operator = self.previous();
+            var right  = try self.allocator.createOne(Expr);
+            right.* = try self.multiplication();
+            e.* = Expr {
+                .Binary = Binary {
+                    .left = e,
+                    .operator = operator,
+                    .right = right,
+                }
+            };
+        }
+
+        return e.*;
+    }
+
+    fn multiplication(self: *Parser) !Expr {
+        warn("in multiplication\n");
+        const e = try self.allocator.createOne(Expr);
+        e.* = try self.unary();
+
+        const target_tokens = []TokenType{TokenType.STAR, TokenType.SLASH};
+        while (self.match(target_tokens[0..])) {
+            var operator = self.previous();
+            var right  = try self.allocator.createOne(Expr);
+            right.* = try self.unary();
+            e.* = Expr {
+                .Binary = Binary {
+                    .left = e,
+                    .operator = operator,
+                    .right = right,
+                }
+            };
+        }
+
+        return e.*;
+    }
+
+    fn unary(self: *Parser) ParserError!Expr {
+        warn("in unary\n");
+        const target_tokens = []TokenType{TokenType.BANG,TokenType.MINUS};
+        if (self.match(target_tokens[0..])) {
+            var operator = self.previous();
+            var right  = try self.allocator.createOne(Expr);
+            // TODO(cgag): zig doesn't like this recursion because it can't infer the type of the
+            // errorset yet.  How to make it explitily the global error set?
+            right.* = try self.unary();
+
+            return Expr {
+                .Unary = Unary {
+                    .operator = operator,
+                    .right = right,
+                }
+            };
+        }
+
+        return self.primary();
+    }
+
+    fn primary(self: *Parser) !Expr{
+        warn("in primary\n");
+
+        var t_false            = []TokenType{TokenType.FALSE};
+        var t_true             = []TokenType{TokenType.TRUE};
+        var t_nil              = []TokenType{TokenType.NIL};
+        var t_number_or_string = []TokenType{TokenType.NUMBER, TokenType.STRING};
+        var t_left_paren       = []TokenType{TokenType.LEFT_PAREN};
+
+        const lit_false = Expr {
+            .Literal = Literal {
+                .value = TokenLiteral {
+                    .Bool = false,
+                }
+            }
+        };
+        const lit_true = Expr {
+            .Literal = Literal {
+                .value = TokenLiteral {
+                    .Bool = true,
+                }
+            }
+        };
+        const lit_nil = Expr {
+            .Literal = Literal {
+                .value = TokenLiteral {
+                    .Nil = true,
+                }
+            }
+        };
+
+
+        if (self.match(t_false)) { return lit_false; }
+        if (self.match(t_true))  { return lit_true;  }
+        if (self.match(t_nil))   { return lit_nil;   }
+
+        if (self.match(t_number_or_string)) {
+            // TODO(cgag): holy shit are we fucked here?
+            warn("it's a number or a string\n");
+            var prev = self.previous();
+            warn("prev: {}\n", prev);
+            return Expr{
+                .Literal = Literal {
+                    .value = prev.literal.?,
+                }
+            };
+        }
+
+        if (self.match(t_left_paren)) {
+            var e = try self.allocator.createOne(Expr);
+            e.* = try self.expression();
+
+            _ = self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression");
+            return Expr {
+                .Grouping = Grouping {
+                    .expr = e,
+                },
+            };
+        }
+
+        // TODO(cgag): delete
+        return lit_false;
+    }
+
+    fn consume(self: *Parser, token_type: TokenType, message: []const u8) Token {
+        if (self.check(token_type)) {
+            return self.advance();
+        }
+
+        unreachable;
+        // TODO(cgag): implement the rest
     }
 
     // TODO(cgag): varargs
@@ -190,33 +369,37 @@ pub const Parser = struct {
 
 
 test "parser whatever" {
-    var l = Expr{
-        .Literal = Literal {
-            .value = TokenLiteral{ .String = "left-value" },
-        }
-    };
-    var r = Expr{
-        .Literal = Literal {
-            .value = TokenLiteral{ .Number = 20.0 },
-        }
-    };
-    var e = Expr {
-        .Binary = Binary{
-            .left  = &l,
-            .right = &r,
-            .operator = Token.init(TokenType.AND, "+", null, 10),
-        }
-    };
-    var s = try expr_print(alloc, e);
-    warn("\n--\nprinted expr: {}\n", s);
+    // var l = Expr{
+    //     .Literal = Literal {
+    //         .value = TokenLiteral{ .String = "left-value" },
+    //     }
+    // };
+    // var r = Expr{
+    //     .Literal = Literal {
+    //         .value = TokenLiteral{ .Number = 20.0 },
+    //     }
+    // };
+    // var e = Expr {
+    //     .Binary = Binary{
+    //         .left  = &l,
+    //         .right = &r,
+    //         .operator = Token.init(TokenType.AND, "+", null, 10),
+    //     }
+    // };
+    // var s = try expr_print(alloc, e);
+    // warn("\n--\nprinted expr: {}\n", s);
 
     {
         const Scanner = @import("lex.zig").Scanner;
         var src     = try io.readFileAlloc(alloc, "test/parse.lox");
         var scanner = try Scanner.init(alloc, src);
         var tokens  = try scanner.scan();
-        var p       = Parser.init(alloc, tokens);
-        var parsed_expr = try p.parse();
+        for (tokens.toSlice()) |t| {
+            warn("{} ({})\n", @tagName(t.type), t.lexeme);
+        }
+        var p = Parser.init(alloc, tokens);
+        var parsed_expr  = try p.parse();
+        warn("parsed expr: {}\n", parsed_expr);
         var printed_expr = try expr_print(alloc, parsed_expr);
         warn("printed real expr: {}\n", printed_expr);
     }
