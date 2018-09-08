@@ -26,10 +26,10 @@ pub const ExprType = enum {
 };
 
 pub const Expr = union(ExprType) {
-    Binary: Binary,
-    Literal: Literal,
+    Binary:   Binary,
+    Literal:  Literal,
     Grouping: Grouping,
-    Unary: Unary,
+    Unary:    Unary,
 };
 
 // TODO(cgag): if left and right aren't pointers, we get the error
@@ -57,28 +57,19 @@ pub const Unary = struct {
 
 // caller owns returned memory
 pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
-    const s = switch (e) {
-        ExprType.Binary => try parenthesize(a, @tagName(e.Binary.operator.type), e),
-        ExprType.Literal => blk: {
+    switch (e) {
+        ExprType.Binary  => return try parenthesize(a, @tagName(e.Binary.operator.type), e),
+        ExprType.Literal => {
             switch(e.Literal.value) {
-                TokenLiteralType.String => {
-                    break :blk try fmt.allocPrint(a, "{}", e.Literal.value.String);
-                },
-                TokenLiteralType.Number => {
-                    break :blk try fmt.allocPrint(a, "{.}", e.Literal.value.Number);
-                },
-                TokenLiteralType.Bool => {
-                    break :blk try fmt.allocPrint(a, "{}", e.Literal.value.Bool);
-                },
-                TokenLiteralType.Nil => {
-                    break :blk try fmt.allocPrint(a, "{}", "NIL");
-                }
+                TokenLiteralType.String => return try fmt.allocPrint(a, "{}", e.Literal.value.String),
+                TokenLiteralType.Number => return try fmt.allocPrint(a, "{.}", e.Literal.value.Number),
+                TokenLiteralType.Bool   => return try fmt.allocPrint(a, "{}", e.Literal.value.Bool),
+                TokenLiteralType.Nil    => return try fmt.allocPrint(a, "{}", "NIL"),
             }
         },
-        ExprType.Grouping => try parenthesize(a, "group", e),
-        ExprType.Unary => try parenthesize(a, e.Unary.operator.lexeme, e),
-    };
-    return s;
+        ExprType.Grouping => return try parenthesize(a, "group", e),
+        ExprType.Unary    => return try parenthesize(a, e.Unary.operator.lexeme, e),
+    }
 }
 
 // caller owns returned memory
@@ -90,7 +81,6 @@ pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrint
             var right = try expr_print(a, e.Binary.right.*);
             defer a.free(left);
             defer a.free(right);
-
             break :blk try fmt.allocPrint(a, "({} {} {})", name, left, right);
         },
         ExprType.Literal => unreachable,
@@ -129,28 +119,30 @@ pub const Parser = struct {
         return try self.equality();
     }
 
+    // TODO(cgag): how to recursively free all these?
     // equality → comparison ( ( "!=" | "==" ) comparison )* ;
-    // TODO(cgag): need to think about how all this memory is going to work,
-    // I think we're putting things like "e" on the stack and taking their address.  Dangerous.
     fn equality(self: *Parser) !Expr {
-        const left = try self.allocator.createOne(Expr);
+        var left = try self.allocator.createOne(Expr);
         left.* = try self.comparison();
         warn("left: {}\n", left);
 
         const target_tokens = []TokenType{TokenType.BANG_EQUAL, TokenType.EQUAL_EQUAL};
         while (self.match(target_tokens[0..])) {
-            // TODO(cgag): these need to be on the heap?? how to copy them over in zig?
             var operator = self.previous();
             warn("previous: {}\n", operator);
             var right = try self.allocator.createOne(Expr);
             right.* = try self.comparison();
-            left.* = Expr {
-                    .Binary = Binary {
-                        .left = left,
-                        .operator = operator,
-                        .right = right,
-                    },
-                };
+
+            var new_left = try self.allocator.createOne(Expr);
+            new_left.* = Expr {
+                .Binary = Binary {
+                    .left = left,
+                    .operator = operator,
+                    .right = right,
+                },
+            };
+
+            left = new_left;
         }
 
         return left.*;
@@ -158,7 +150,7 @@ pub const Parser = struct {
 
     fn comparison(self: *Parser) !Expr {
         warn("in comparision\n");
-        const e = try self.allocator.createOne(Expr);
+        var e = try self.allocator.createOne(Expr);
         e.* = try self.addition();
 
         const target_tokens = []TokenType{
@@ -172,25 +164,24 @@ pub const Parser = struct {
             var right = try self.allocator.createOne(Expr);
             right.* = try self.addition();
             warn("e currently: {}", e);
-            e.* = Expr {
+
+            var new_e =  try self.allocator.createOne(Expr);
+            new_e.* = Expr {
                 .Binary = Binary {
                     .left = e,
                     .operator = operator,
                     .right = right,
                 }
             };
+            e = new_e;
         }
-
-        // warn("in comparision returning left: {}\n", e.Binary.left);
-        // warn("in comparision returning right: {}\n", e);
-        // warn("in comparision returning e: {}\n", e);
 
         return e.*;
     }
 
     fn addition(self: *Parser) !Expr {
         warn("in addition\n");
-        const e = try self.allocator.createOne(Expr);
+        var e = try self.allocator.createOne(Expr);
         e.* = try self.multiplication();
 
         const target_tokens = []TokenType{TokenType.MINUS, TokenType.PLUS};
@@ -198,13 +189,16 @@ pub const Parser = struct {
             var operator = self.previous();
             var right  = try self.allocator.createOne(Expr);
             right.* = try self.multiplication();
-            e.* = Expr {
+
+            var new_e = try self.allocator.createOne(Expr);
+            new_e.* = Expr {
                 .Binary = Binary {
                     .left = e,
                     .operator = operator,
                     .right = right,
                 }
             };
+            e = new_e;
         }
 
         return e.*;
@@ -212,7 +206,7 @@ pub const Parser = struct {
 
     fn multiplication(self: *Parser) !Expr {
         warn("in multiplication\n");
-        const e = try self.allocator.createOne(Expr);
+        var e = try self.allocator.createOne(Expr);
         e.* = try self.unary();
 
         const target_tokens = []TokenType{TokenType.STAR, TokenType.SLASH};
@@ -220,13 +214,15 @@ pub const Parser = struct {
             var operator = self.previous();
             var right  = try self.allocator.createOne(Expr);
             right.* = try self.unary();
-            e.* = Expr {
+            var new_e  = try self.allocator.createOne(Expr);
+            new_e.* = Expr {
                 .Binary = Binary {
                     .left = e,
                     .operator = operator,
                     .right = right,
                 }
             };
+            e = new_e;
         }
 
         return e.*;
@@ -283,7 +279,6 @@ pub const Parser = struct {
                 }
             }
         };
-
 
         if (self.match(t_false)) { return lit_false; }
         if (self.match(t_true))  { return lit_true;  }
