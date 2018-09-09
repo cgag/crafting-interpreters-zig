@@ -63,7 +63,10 @@ pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
             switch(e.Literal.value) {
                 TokenLiteralType.String => return try fmt.allocPrint(a, "{}", e.Literal.value.String),
                 TokenLiteralType.Number => return try fmt.allocPrint(a, "{.}", e.Literal.value.Number),
-                TokenLiteralType.Bool   => return try fmt.allocPrint(a, "{}", e.Literal.value.Bool),
+                TokenLiteralType.Bool   => {
+                    warn("literal bool\n");
+                    return try fmt.allocPrint(a, "{}", e.Literal.value.Bool);
+                },
                 TokenLiteralType.Nil    => return try fmt.allocPrint(a, "{}", "NIL"),
             }
         },
@@ -234,10 +237,10 @@ pub const Parser = struct {
         if (self.match(target_tokens[0..])) {
             var operator = self.previous();
             var right  = try self.allocator.createOne(Expr);
-            // TODO(cgag): zig doesn't like this recursion because it can't infer the type of the
-            // errorset yet.  How to make it explitily the global error set?
+            // TODO(cgag): wtf, right is coming out as binary??
             right.* = try self.unary();
 
+            // TODO(cgag): how do recursiion work here, we're doing something wrong for sure.
             return Expr {
                 .Unary = Unary {
                     .operator = operator,
@@ -246,7 +249,21 @@ pub const Parser = struct {
             };
         }
 
-        return self.primary();
+        const tmp = try self.primary();
+        const tmp_s = try expr_print(alloc, tmp);
+        defer alloc.free(tmp_s);
+
+        const lit_true = Expr {
+            .Literal = Literal {
+                .value = TokenLiteral {
+                    .Bool = true,
+                }
+            }
+        };
+        // warn("tmp primary 0: {}\n", lit_true);
+        // warn("tmp primary 1: {}\n", tmp_s);
+        // warn("tmp primary 2: {}\n", tmp);
+        return tmp;
     }
 
     fn primary(self: *Parser) !Expr{
@@ -265,6 +282,7 @@ pub const Parser = struct {
                 }
             }
         };
+
         const lit_true = Expr {
             .Literal = Literal {
                 .value = TokenLiteral {
@@ -272,6 +290,16 @@ pub const Parser = struct {
                 }
             }
         };
+
+        // TODO(cgag): this works, but not .Bool!??
+        // const lit_true = Expr {
+        //     .Literal = Literal {
+        //         .value = TokenLiteral {
+        //             .Number = 1,
+        //         }
+        //     }
+        // };
+
         const lit_nil = Expr {
             .Literal = Literal {
                 .value = TokenLiteral {
@@ -280,12 +308,21 @@ pub const Parser = struct {
             }
         };
 
-        if (self.match(t_false)) { return lit_false; }
-        if (self.match(t_true))  { return lit_true;  }
-        if (self.match(t_nil))   { return lit_nil;   }
+        if (self.match(t_false)) {
+            warn("it's literally false\n");
+            return lit_false;
+        }
+
+        if (self.match(t_true)) {
+            warn("it's literally true\n");
+            return lit_true;
+        }
+        if (self.match(t_nil)) {
+            warn("it's literally nil\n");
+            return lit_nil;
+        }
 
         if (self.match(t_number_or_string)) {
-            // TODO(cgag): holy shit are we fucked here?
             warn("it's a number or a string\n");
             var prev = self.previous();
             warn("prev: {}\n", prev);
@@ -364,38 +401,19 @@ pub const Parser = struct {
 
 
 test "parser whatever" {
-    // var l = Expr{
-    //     .Literal = Literal {
-    //         .value = TokenLiteral{ .String = "left-value" },
-    //     }
-    // };
-    // var r = Expr{
-    //     .Literal = Literal {
-    //         .value = TokenLiteral{ .Number = 20.0 },
-    //     }
-    // };
-    // var e = Expr {
-    //     .Binary = Binary{
-    //         .left  = &l,
-    //         .right = &r,
-    //         .operator = Token.init(TokenType.AND, "+", null, 10),
-    //     }
-    // };
-    // var s = try expr_print(alloc, e);
-    // warn("\n--\nprinted expr: {}\n", s);
+    const boolPrint = try fmt.allocPrint(alloc, "{}", true);
+    warn("bool print: {}\n", boolPrint);
 
-    {
-        const Scanner = @import("lex.zig").Scanner;
-        var src     = try io.readFileAlloc(alloc, "test/parse.lox");
-        var scanner = try Scanner.init(alloc, src);
-        var tokens  = try scanner.scan();
-        for (tokens.toSlice()) |t| {
-            warn("{} ({})\n", @tagName(t.type), t.lexeme);
-        }
-        var p = Parser.init(alloc, tokens);
-        var parsed_expr  = try p.parse();
-        warn("parsed expr: {}\n", parsed_expr);
-        var printed_expr = try expr_print(alloc, parsed_expr);
-        warn("printed real expr: {}\n", printed_expr);
+    const Scanner = @import("lex.zig").Scanner;
+    var src     = try io.readFileAlloc(alloc, "test/parse.lox");
+    var scanner = try Scanner.init(alloc, src);
+    var tokens  = try scanner.scan();
+    for (tokens.toSlice()) |t| {
+        warn("{} ({})\n", @tagName(t.type), t.lexeme);
     }
+    var p = Parser.init(alloc, tokens);
+    var parsed_expr  = try p.parse();
+    warn("parsed expr: {}\n", parsed_expr);
+    var printed_expr = try expr_print(alloc, parsed_expr);
+    warn("printed real expr: {}\n", printed_expr);
 }
