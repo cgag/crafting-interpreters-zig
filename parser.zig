@@ -60,14 +60,18 @@ pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
     switch (e) {
         ExprType.Binary  => return try parenthesize(a, @tagName(e.Binary.operator.type), e),
         ExprType.Literal => {
+            warn("literal branch of expr_print: {}", e);
             switch(e.Literal.value) {
-                TokenLiteralType.String => return try fmt.allocPrint(a, "{}", e.Literal.value.String),
-                TokenLiteralType.Number => return try fmt.allocPrint(a, "{.}", e.Literal.value.Number),
+                TokenLiteralType.Nil    => return try fmt.allocPrint(a, "{}", "NIL"),
                 TokenLiteralType.Bool   => {
                     warn("literal bool\n");
                     return try fmt.allocPrint(a, "{}", e.Literal.value.Bool);
                 },
-                TokenLiteralType.Nil    => return try fmt.allocPrint(a, "{}", "NIL"),
+                TokenLiteralType.String => return try fmt.allocPrint(a, "{}", e.Literal.value.String),
+                TokenLiteralType.Number => {
+                    warn("literal number\n");
+                    return try fmt.allocPrint(a, "{.}", e.Literal.value.Number);
+                },
             }
         },
         ExprType.Grouping => return try parenthesize(a, "group", e),
@@ -400,7 +404,48 @@ pub const Parser = struct {
 };
 
 
-test "parser whatever" {
+test "parser whatever\n" {
+
+
+    // TODO(cgag): this works, but not .Bool!??
+    const test_lit_true_nil = Expr {
+        .Literal = Literal {
+            .value = TokenLiteral {
+                .Nil = true,
+            }
+        }
+    };
+
+    var printed_lit_nil  = try expr_print(alloc, test_lit_true_nil);
+    defer alloc.free(printed_lit_nil);
+    warn("printed_lit_nil: {}\n", printed_lit_nil);
+
+    // TODO(cgag): this works, but not .Bool!??
+    // const test_lit_true_int = Expr {
+    //     .Literal = Literal {
+    //         .value = TokenLiteral {
+    //             .Number = 1,
+    //         }
+    //     }
+    // };
+
+    // var printed_lit_int  = try expr_print(alloc, test_lit_true_int);
+    // defer alloc.free(printed_lit_int);
+    // warn("printed_lit_int: {}\n", printed_lit_int);
+
+    // const test_lit_true_bool = Expr {
+    //     .Literal = Literal {
+    //         .value = TokenLiteral {
+    //             .Bool = true,
+    //         }
+    //     }
+    // };
+
+    // var printed_lit_bool = try expr_print(alloc, test_lit_true_bool);
+    // defer alloc.free(printed_lit_bool);
+    // warn("printed_lit_bool: {}\n", printed_lit_bool);
+
+
     const boolPrint = try fmt.allocPrint(alloc, "{}", true);
     warn("bool print: {}\n", boolPrint);
 

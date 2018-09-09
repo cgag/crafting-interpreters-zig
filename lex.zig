@@ -174,7 +174,6 @@ pub const Scanner = struct {
             '/' => {
                 if (self.match('/')) {
                     // comment goes until end of the line
-                    // TODO(cgag): what in the fuck, while else?
                     while (self.peek() != '\n' and !self.is_at_end()) {
                         _ = self.advance();
                     }
