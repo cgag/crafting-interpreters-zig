@@ -18,6 +18,8 @@ pub const ParserError = error{
     OutOfMemory
 };
 
+// TODO(cgag): i think we can just put union(enum) and the compiler will 
+// create these types implicitly
 pub const ExprType = enum {
     Binary,
     Literal,
