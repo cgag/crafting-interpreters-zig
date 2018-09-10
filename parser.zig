@@ -34,10 +34,7 @@ pub const Expr = union(ExprType) {
     Unary:    Unary,
 };
 
-// TODO(cgag): if left and right aren't pointers, we get the error
-// parser.zig:17:20: error: struct 'Binary' contains itself, which sort of
-// makes sense, but it's indirect and confusing.
-// TODO(cgag): how do we free this
+// TODO(cgag): need to be able to free
 pub const Binary = struct {
     left:  *Expr,
     right: *Expr,
@@ -62,7 +59,7 @@ pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
     switch (e) {
         ExprType.Binary  => return try parenthesize(a, @tagName(e.Binary.operator.type), e),
         ExprType.Literal => {
-            warn("literal branch of expr_print: {}", e);
+            warn("literal branch of expr_print: {}\n", e);
             switch(e.Literal.value) {
                 TokenLiteralType.Nil    => return try fmt.allocPrint(a, "{}", "NIL"),
                 TokenLiteralType.Bool   => {
@@ -83,7 +80,6 @@ pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
 
 // caller owns returned memory
 pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrintError![]const u8 {
-    // TODO(cgag): is there a zig equiv to stringbuilder?
     const buf = switch (e) {
         ExprType.Binary => blk: {
             var left  = try expr_print(a, e.Binary.left.*);
@@ -408,59 +404,43 @@ pub const Parser = struct {
 
 test "parser whatever\n" {
 
-
     // TODO(cgag): this works, but not .Bool!??
-    const test_lit_true_nil = Expr {
+    const test_lit_true_int = Expr {
         .Literal = Literal {
             .value = TokenLiteral {
-                .Nil = true,
+                .Number = 1,
             }
         }
     };
+    var printed_lit_int  = try expr_print(alloc, test_lit_true_int);
+    defer alloc.free(printed_lit_int);
+    warn("printed_lit_int: {}\n", printed_lit_int);
 
-    var printed_lit_nil  = try expr_print(alloc, test_lit_true_nil);
-    defer alloc.free(printed_lit_nil);
-    warn("printed_lit_nil: {}\n", printed_lit_nil);
-
-    // TODO(cgag): this works, but not .Bool!??
-    // const test_lit_true_int = Expr {
-    //     .Literal = Literal {
-    //         .value = TokenLiteral {
-    //             .Number = 1,
-    //         }
-    //     }
-    // };
-
-    // var printed_lit_int  = try expr_print(alloc, test_lit_true_int);
-    // defer alloc.free(printed_lit_int);
-    // warn("printed_lit_int: {}\n", printed_lit_int);
-
-    // const test_lit_true_bool = Expr {
-    //     .Literal = Literal {
-    //         .value = TokenLiteral {
-    //             .Bool = true,
-    //         }
-    //     }
-    // };
-
-    // var printed_lit_bool = try expr_print(alloc, test_lit_true_bool);
-    // defer alloc.free(printed_lit_bool);
-    // warn("printed_lit_bool: {}\n", printed_lit_bool);
+    const test_lit_true_bool = Expr {
+        .Literal = Literal {
+            .value = TokenLiteral {
+                .Bool = true,
+            }
+        }
+    };
+    var printed_lit_bool = try expr_print(alloc, test_lit_true_bool);
+    defer alloc.free(printed_lit_bool);
+    warn("printed_lit_bool: {}\n", printed_lit_bool);
 
 
-    const boolPrint = try fmt.allocPrint(alloc, "{}", true);
-    warn("bool print: {}\n", boolPrint);
+//     const boolPrint = try fmt.allocPrint(alloc, "{}", true);
+//     warn("bool print: {}\n", boolPrint);
 
-    const Scanner = @import("lex.zig").Scanner;
-    var src     = try io.readFileAlloc(alloc, "test/parse.lox");
-    var scanner = try Scanner.init(alloc, src);
-    var tokens  = try scanner.scan();
-    for (tokens.toSlice()) |t| {
-        warn("{} ({})\n", @tagName(t.type), t.lexeme);
-    }
-    var p = Parser.init(alloc, tokens);
-    var parsed_expr  = try p.parse();
-    warn("parsed expr: {}\n", parsed_expr);
-    var printed_expr = try expr_print(alloc, parsed_expr);
-    warn("printed real expr: {}\n", printed_expr);
+//     const Scanner = @import("lex.zig").Scanner;
+//     var src     = try io.readFileAlloc(alloc, "test/parse.lox");
+//     var scanner = try Scanner.init(alloc, src);
+//     var tokens  = try scanner.scan();
+//     for (tokens.toSlice()) |t| {
+//         warn("{} ({})\n", @tagName(t.type), t.lexeme);
+//     }
+//     var p = Parser.init(alloc, tokens);
+//     var parsed_expr  = try p.parse();
+//     warn("parsed expr: {}\n", parsed_expr);
+//     var printed_expr = try expr_print(alloc, parsed_expr);
+//     warn("printed real expr: {}\n", printed_expr);
 }
