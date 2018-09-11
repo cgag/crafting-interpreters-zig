@@ -20,14 +20,14 @@ pub const ParserError = error{
 
 // TODO(cgag): i think we can just put union(enum) and the compiler will 
 // create these types implicitly
-pub const ExprType = enum {
-    Binary,
-    Literal,
-    Grouping,
-    Unary,
-};
+// pub const ExprType = enum {
+//     Binary,
+//     Literal,
+//     Grouping,
+//     Unary,
+// };
 
-pub const Expr = union(ExprType) {
+pub const Expr = union(enum) {
     Binary:   Binary,
     Literal:  Literal,
     Grouping: Grouping,
@@ -57,8 +57,10 @@ pub const Unary = struct {
 // caller owns returned memory
 pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
     switch (e) {
-        ExprType.Binary  => return try parenthesize(a, @tagName(e.Binary.operator.type), e),
-        ExprType.Literal => {
+        //  TODO(cgag): this expliity Expr.Binary shouldn't be necessary, should it?
+        // It's not really ambiguous since e is known to be an Expr.
+        Expr.Binary  => return try parenthesize(a, @tagName(e.Binary.operator.type), e),
+        Expr.Literal => {
             warn("literal branch of expr_print: {}\n", e);
             switch(e.Literal.value) {
                 TokenLiteralType.Nil    => return try fmt.allocPrint(a, "{}", "NIL"),
@@ -73,30 +75,30 @@ pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
                 },
             }
         },
-        ExprType.Grouping => return try parenthesize(a, "group", e),
-        ExprType.Unary    => return try parenthesize(a, e.Unary.operator.lexeme, e),
+        Expr.Grouping => return try parenthesize(a, "group", e),
+        Expr.Unary    => return try parenthesize(a, e.Unary.operator.lexeme, e),
     }
 }
 
 // caller owns returned memory
 pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrintError![]const u8 {
     const buf = switch (e) {
-        ExprType.Binary => blk: {
+        Expr.Binary => blk: {
             var left  = try expr_print(a, e.Binary.left.*);
             var right = try expr_print(a, e.Binary.right.*);
             defer a.free(left);
             defer a.free(right);
             break :blk try fmt.allocPrint(a, "({} {} {})", name, left, right);
         },
-        ExprType.Literal => unreachable,
-        ExprType.Grouping => blk: {
+        Expr.Literal => unreachable,
+        Expr.Grouping => blk: {
             warn("how'd we even get in here??\n");
             warn("grouping: {}", e);
             var printed_expr = try expr_print(a, e.Grouping.expr.*);
             defer a.free(printed_expr);
             break :blk try fmt.allocPrint(a, "({} {})", name, printed_expr);
         },
-        ExprType.Unary => blk: {
+        Expr.Unary => blk: {
             var right = try expr_print(a, e.Unary.right.*);
             defer a.free(right);
             break :blk try fmt.allocPrint(a, "({} {})", name, right);
@@ -285,10 +287,12 @@ pub const Parser = struct {
             }
         };
 
+        // inlining this "true" instead of creating a var triggers a bug
+        var t = true;
         const lit_true = Expr {
             .Literal = Literal {
                 .value = TokenLiteral {
-                    .Bool = true,
+                    .Bool = t,
                 }
             }
         };
@@ -301,6 +305,7 @@ pub const Parser = struct {
         //         }
         //     }
         // };
+
 
         const lit_nil = Expr {
             .Literal = Literal {
@@ -404,43 +409,43 @@ pub const Parser = struct {
 
 test "parser whatever\n" {
 
-    // TODO(cgag): this works, but not .Bool!??
-    const test_lit_true_int = Expr {
-        .Literal = Literal {
-            .value = TokenLiteral {
-                .Number = 1,
-            }
-        }
-    };
-    var printed_lit_int  = try expr_print(alloc, test_lit_true_int);
-    defer alloc.free(printed_lit_int);
-    warn("printed_lit_int: {}\n", printed_lit_int);
+//     // TODO(cgag): this works, but not .Bool!??
+//     const test_lit_true_int = Expr {
+//         .Literal = Literal {
+//             .value = TokenLiteral {
+//                 .Number = 1,
+//             }
+//         }
+//     };
+//     var printed_lit_int  = try expr_print(alloc, test_lit_true_int);
+//     defer alloc.free(printed_lit_int);
+//     warn("printed_lit_int: {}\n", printed_lit_int);
 
-    const test_lit_true_bool = Expr {
-        .Literal = Literal {
-            .value = TokenLiteral {
-                .Bool = true,
-            }
-        }
-    };
-    var printed_lit_bool = try expr_print(alloc, test_lit_true_bool);
-    defer alloc.free(printed_lit_bool);
-    warn("printed_lit_bool: {}\n", printed_lit_bool);
+//     const test_lit_true_bool = Expr {
+//         .Literal = Literal {
+//             .value = TokenLiteral {
+//                 .Bool = true,
+//             }
+//         }
+//     };
+//     var printed_lit_bool = try expr_print(alloc, test_lit_true_bool);
+//     defer alloc.free(printed_lit_bool);
+//     warn("printed_lit_bool: {}\n", printed_lit_bool);
 
 
 //     const boolPrint = try fmt.allocPrint(alloc, "{}", true);
 //     warn("bool print: {}\n", boolPrint);
 
-//     const Scanner = @import("lex.zig").Scanner;
-//     var src     = try io.readFileAlloc(alloc, "test/parse.lox");
-//     var scanner = try Scanner.init(alloc, src);
-//     var tokens  = try scanner.scan();
-//     for (tokens.toSlice()) |t| {
-//         warn("{} ({})\n", @tagName(t.type), t.lexeme);
-//     }
-//     var p = Parser.init(alloc, tokens);
-//     var parsed_expr  = try p.parse();
-//     warn("parsed expr: {}\n", parsed_expr);
-//     var printed_expr = try expr_print(alloc, parsed_expr);
-//     warn("printed real expr: {}\n", printed_expr);
+    const Scanner = @import("lex.zig").Scanner;
+    var src     = try io.readFileAlloc(alloc, "test/parse.lox");
+    var scanner = try Scanner.init(alloc, src);
+    var tokens  = try scanner.scan();
+    for (tokens.toSlice()) |t| {
+        warn("{} ({})\n", @tagName(t.type), t.lexeme);
+    }
+    var p = Parser.init(alloc, tokens);
+    var parsed_expr  = try p.parse();
+    warn("parsed expr: {}\n", parsed_expr);
+    var printed_expr = try expr_print(alloc, parsed_expr);
+    warn("printed real expr: {}\n", printed_expr);
 }
