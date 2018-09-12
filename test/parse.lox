@@ -1,2 +1,2 @@
 // TODO(cgag): does not work!!!, why?: !true
-!true
+!true >= 10 > 1 < 20;

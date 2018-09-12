@@ -3,12 +3,16 @@ const warn = std.debug.warn;
 const mem  = std.mem;
 const os   = std.os;
 const io   = std.io;
-const ArrayList = @import("std").ArrayList;
-const globals = @import("globals.zig");
-const atof = @import("atof.zig");
+const ArrayList = std.ArrayList;
+
+const globals   = @import("globals.zig");
+const atof      = @import("atof.zig");
 
 use @import("lex.zig");
 const Parser = @import("parser.zig").Parser;
+
+// TODO(cgag): not sure this belongs in parser.zig
+const expr_print = @import("parser.zig").expr_print;
 
 // c_allocator doesn't work, causes ldd to crash with duplicate symbol "_start"
 // var alloc = std.heap.c_allocator;
@@ -43,15 +47,10 @@ fn print(s: []const u8) !void {
 fn println(s: []const u8) !void {
 
     // TODO(cgag): basically make warn but with stdout
-    // const buf = try std.fmt.allocPrint(
-    //     alloc,
-
-    const with_newline_buf = try alloc.alloc(u8, s.len+1);
-    defer alloc.free(with_newline_buf);
-    for (s[0..s.len])  |b, i| with_newline_buf[i] = b;
-    with_newline_buf[s.len] = '\n';
     var stdout = try std.io.getStdOut();
-    try stdout.write(with_newline_buf);
+    const buf = try std.fmt.allocPrint(alloc, "{}\n", s);
+    defer alloc.free(buf);
+    try stdout.write(buf);
 }
 
 fn runFile(path: []const u8) !void {
@@ -67,28 +66,33 @@ fn run(src: []const u8) !void {
     const tokens = try scanner.scan();
 
     for (tokens.toSlice()) |token| {
-        warn("{} ({})\n", @tagName(token.type), token.lexeme);
         if (token.literal) |literal| {
             switch (literal) {
                 // TODO(cgag): fix compiler so that format just prints the active field in the union
-                LiteralType.Number => {
-                    warn("token: literal({}), lexeme({}): {.}\n",
+                Literal.Number => {
+                    warn("{}, (\"{}\"): {.}\n",
                          @tagName(token.type),
                          token.lexeme,
                          literal.Number,
                          );
                 },
-                LiteralType.String => {
-                    warn("printing token literal ({}): {}\n", @tagName(token.type), literal.String);
+                Literal.String => {
+                    warn("({}): {}\n", @tagName(token.type), literal.String);
                 },
+                Literal.Nil  => warn("({}): {}\n", @tagName(token.type), literal.Nil),
+                Literal.Bool => warn("({}): {}\n", @tagName(token.type), literal.Bool),
             }
+        } else {
+            warn("{} ({})\n", @tagName(token.type), token.lexeme);
         }
     }
 
-    var parser = Parser.init(tokens);
-    var e = parser.parse();
-    warn("expr: {}\n", e);
+    var parser = Parser.init(alloc, tokens);
+    var e = try parser.parse();
+    var e_str = try expr_print(alloc, e);
+    defer alloc.free(e_str);
 
+    warn("expr: {}\n", e_str);
 
     if (globals.had_error) {
         os.exit(65);

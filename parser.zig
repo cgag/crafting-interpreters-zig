@@ -8,24 +8,14 @@ const ArrayList = std.ArrayList;
 const Token            = @import("lex.zig").Token;
 const TokenType        = @import("lex.zig").TokenType;
 const TokenLiteral     = @import("lex.zig").Literal;
-const TokenLiteralType = @import("lex.zig").LiteralType;
 
 // TODO(cgag): get rid of these globals
 var alloc = &std.heap.DirectAllocator.init().allocator;
 
-
 pub const ParserError = error{
-    OutOfMemory
+    OutOfMemory,
+    UnexpectedToken,
 };
-
-// TODO(cgag): i think we can just put union(enum) and the compiler will 
-// create these types implicitly
-// pub const ExprType = enum {
-//     Binary,
-//     Literal,
-//     Grouping,
-//     Unary,
-// };
 
 pub const Expr = union(enum) {
     Binary:   Binary,
@@ -61,18 +51,11 @@ pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
         // It's not really ambiguous since e is known to be an Expr.
         Expr.Binary  => return try parenthesize(a, @tagName(e.Binary.operator.type), e),
         Expr.Literal => {
-            warn("literal branch of expr_print: {}\n", e);
             switch(e.Literal.value) {
-                TokenLiteralType.Nil    => return try fmt.allocPrint(a, "{}", "NIL"),
-                TokenLiteralType.Bool   => {
-                    warn("literal bool\n");
-                    return try fmt.allocPrint(a, "{}", e.Literal.value.Bool);
-                },
-                TokenLiteralType.String => return try fmt.allocPrint(a, "{}", e.Literal.value.String),
-                TokenLiteralType.Number => {
-                    warn("literal number\n");
-                    return try fmt.allocPrint(a, "{.}", e.Literal.value.Number);
-                },
+                TokenLiteral.Nil    => return try fmt.allocPrint(a, "{}",  "NIL"),
+                TokenLiteral.Bool   => return try fmt.allocPrint(a, "{}",  e.Literal.value.Bool),
+                TokenLiteral.String => return try fmt.allocPrint(a, "{}",  e.Literal.value.String),
+                TokenLiteral.Number => return try fmt.allocPrint(a, "{.}", e.Literal.value.Number),
             }
         },
         Expr.Grouping => return try parenthesize(a, "group", e),
@@ -92,8 +75,7 @@ pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrint
         },
         Expr.Literal => unreachable,
         Expr.Grouping => blk: {
-            warn("how'd we even get in here??\n");
-            warn("grouping: {}", e);
+            warn("we're in grouping, what???\n");
             var printed_expr = try expr_print(a, e.Grouping.expr.*);
             defer a.free(printed_expr);
             break :blk try fmt.allocPrint(a, "({} {})", name, printed_expr);
@@ -131,12 +113,10 @@ pub const Parser = struct {
     fn equality(self: *Parser) !Expr {
         var left = try self.allocator.createOne(Expr);
         left.* = try self.comparison();
-        warn("left: {}\n", left);
 
         const target_tokens = []TokenType{TokenType.BANG_EQUAL, TokenType.EQUAL_EQUAL};
         while (self.match(target_tokens[0..])) {
             var operator = self.previous();
-            warn("previous: {}\n", operator);
             var right = try self.allocator.createOne(Expr);
             right.* = try self.comparison();
 
@@ -156,7 +136,6 @@ pub const Parser = struct {
     }
 
     fn comparison(self: *Parser) !Expr {
-        warn("in comparision\n");
         var e = try self.allocator.createOne(Expr);
         e.* = try self.addition();
 
@@ -170,7 +149,6 @@ pub const Parser = struct {
             var operator = self.previous();
             var right = try self.allocator.createOne(Expr);
             right.* = try self.addition();
-            warn("e currently: {}", e);
 
             var new_e =  try self.allocator.createOne(Expr);
             new_e.* = Expr {
@@ -187,7 +165,6 @@ pub const Parser = struct {
     }
 
     fn addition(self: *Parser) !Expr {
-        warn("in addition\n");
         var e = try self.allocator.createOne(Expr);
         e.* = try self.multiplication();
 
@@ -212,7 +189,6 @@ pub const Parser = struct {
     }
 
     fn multiplication(self: *Parser) !Expr {
-        warn("in multiplication\n");
         var e = try self.allocator.createOne(Expr);
         e.* = try self.unary();
 
@@ -236,15 +212,12 @@ pub const Parser = struct {
     }
 
     fn unary(self: *Parser) ParserError!Expr {
-        warn("in unary\n");
         const target_tokens = []TokenType{TokenType.BANG,TokenType.MINUS};
         if (self.match(target_tokens[0..])) {
             var operator = self.previous();
             var right  = try self.allocator.createOne(Expr);
-            // TODO(cgag): wtf, right is coming out as binary??
             right.* = try self.unary();
 
-            // TODO(cgag): how do recursiion work here, we're doing something wrong for sure.
             return Expr {
                 .Unary = Unary {
                     .operator = operator,
@@ -264,20 +237,16 @@ pub const Parser = struct {
                 }
             }
         };
-        // warn("tmp primary 0: {}\n", lit_true);
-        // warn("tmp primary 1: {}\n", tmp_s);
-        // warn("tmp primary 2: {}\n", tmp);
+
         return tmp;
     }
 
     fn primary(self: *Parser) !Expr{
-        warn("in primary\n");
-
-        var t_false            = []TokenType{TokenType.FALSE};
-        var t_true             = []TokenType{TokenType.TRUE};
-        var t_nil              = []TokenType{TokenType.NIL};
-        var t_number_or_string = []TokenType{TokenType.NUMBER, TokenType.STRING};
-        var t_left_paren       = []TokenType{TokenType.LEFT_PAREN};
+        const t_false            = []TokenType{TokenType.FALSE};
+        const t_true             = []TokenType{TokenType.TRUE};
+        const t_nil              = []TokenType{TokenType.NIL};
+        const t_number_or_string = []TokenType{TokenType.NUMBER, TokenType.STRING};
+        const t_left_paren       = []TokenType{TokenType.LEFT_PAREN};
 
         const lit_false = Expr {
             .Literal = Literal {
@@ -297,16 +266,6 @@ pub const Parser = struct {
             }
         };
 
-        // TODO(cgag): this works, but not .Bool!??
-        // const lit_true = Expr {
-        //     .Literal = Literal {
-        //         .value = TokenLiteral {
-        //             .Number = 1,
-        //         }
-        //     }
-        // };
-
-
         const lit_nil = Expr {
             .Literal = Literal {
                 .value = TokenLiteral {
@@ -316,23 +275,17 @@ pub const Parser = struct {
         };
 
         if (self.match(t_false)) {
-            warn("it's literally false\n");
             return lit_false;
         }
-
         if (self.match(t_true)) {
-            warn("it's literally true\n");
             return lit_true;
         }
         if (self.match(t_nil)) {
-            warn("it's literally nil\n");
             return lit_nil;
         }
 
         if (self.match(t_number_or_string)) {
-            warn("it's a number or a string\n");
             var prev = self.previous();
-            warn("prev: {}\n", prev);
             return Expr{
                 .Literal = Literal {
                     .value = prev.literal.?,
@@ -344,7 +297,7 @@ pub const Parser = struct {
             var e = try self.allocator.createOne(Expr);
             e.* = try self.expression();
 
-            _ = self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression");
+            _ = try self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression");
             return Expr {
                 .Grouping = Grouping {
                     .expr = e,
@@ -352,17 +305,16 @@ pub const Parser = struct {
             };
         }
 
-        // TODO(cgag): delete
-        return lit_false;
+        unreachable;
     }
 
-    fn consume(self: *Parser, token_type: TokenType, message: []const u8) Token {
+    fn consume(self: *Parser, token_type: TokenType, message: []const u8) !Token {
         if (self.check(token_type)) {
             return self.advance();
         }
 
-        unreachable;
-        // TODO(cgag): implement the rest
+        parser_error(self.peek(), message);
+        return ParserError.UnexpectedToken;
     }
 
     // TODO(cgag): varargs
@@ -406,46 +358,18 @@ pub const Parser = struct {
     }
 };
 
-
-test "parser whatever\n" {
-
-//     // TODO(cgag): this works, but not .Bool!??
-//     const test_lit_true_int = Expr {
-//         .Literal = Literal {
-//             .value = TokenLiteral {
-//                 .Number = 1,
-//             }
-//         }
-//     };
-//     var printed_lit_int  = try expr_print(alloc, test_lit_true_int);
-//     defer alloc.free(printed_lit_int);
-//     warn("printed_lit_int: {}\n", printed_lit_int);
-
-//     const test_lit_true_bool = Expr {
-//         .Literal = Literal {
-//             .value = TokenLiteral {
-//                 .Bool = true,
-//             }
-//         }
-//     };
-//     var printed_lit_bool = try expr_print(alloc, test_lit_true_bool);
-//     defer alloc.free(printed_lit_bool);
-//     warn("printed_lit_bool: {}\n", printed_lit_bool);
+fn parser_error(token: Token, message: []const u8) void {
+    warn("[line {}] Error: {}\n", token.line, message);
+}
 
 
-//     const boolPrint = try fmt.allocPrint(alloc, "{}", true);
-//     warn("bool print: {}\n", boolPrint);
-
+test "parser whatever" {
     const Scanner = @import("lex.zig").Scanner;
     var src     = try io.readFileAlloc(alloc, "test/parse.lox");
     var scanner = try Scanner.init(alloc, src);
     var tokens  = try scanner.scan();
-    for (tokens.toSlice()) |t| {
-        warn("{} ({})\n", @tagName(t.type), t.lexeme);
-    }
     var p = Parser.init(alloc, tokens);
     var parsed_expr  = try p.parse();
-    warn("parsed expr: {}\n", parsed_expr);
     var printed_expr = try expr_print(alloc, parsed_expr);
-    warn("printed real expr: {}\n", printed_expr);
+    warn("\nprinted expr: {}\n", printed_expr);
 }

@@ -6,8 +6,8 @@ const io        = std.io;
 const ArrayList = std.ArrayList;
 const Map       = std.AutoHashMap;
 
-const globals   = @import("globals.zig");
-const atof      = @import("atof.zig");
+const globals = @import("globals.zig");
+const atof    = @import("atof.zig");
 
 pub const TokenType = enum {
     // single character
@@ -39,19 +39,12 @@ pub const TokenType = enum {
     EOF
 };
 
-pub const LiteralType = enum {
-    String,
-    Number,
+pub const Literal = union(enum) {
+    String: []const u8,
+    Number: f64,
     // TODO(cgag): these are only used in parser.zig,
     // we need to etiehr fully seperate this and the parser,
     // or usnify them
-    Bool,
-    Nil,
-};
-
-pub const Literal = union(LiteralType) {
-    String: []const u8,
-    Number: f64,
     Bool: bool,
     // TODO(cgag): unused value
     Nil: bool,
