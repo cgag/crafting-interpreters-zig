@@ -256,12 +256,10 @@ pub const Parser = struct {
             }
         };
 
-        // inlining this "true" instead of creating a var triggers a bug
-        var t = true;
         const lit_true = Expr {
             .Literal = Literal {
                 .value = TokenLiteral {
-                    .Bool = t,
+                    .Bool = true,
                 }
             }
         };
