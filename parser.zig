@@ -1,13 +1,16 @@
 const std  = @import("std");
 const warn = std.debug.warn;
+const os   = std.os;
 const fmt  = std.fmt;
 const mem  = std.mem;
 const io   = std.io;
 const ArrayList = std.ArrayList;
 
-const Token            = @import("lex.zig").Token;
-const TokenType        = @import("lex.zig").TokenType;
-const TokenLiteral     = @import("lex.zig").Literal;
+const Token        = @import("lex.zig").Token;
+const TokenType    = @import("lex.zig").TokenType;
+const TokenLiteral = @import("lex.zig").Literal;
+
+use @import("utils.zig");
 
 // TODO(cgag): get rid of these globals
 var alloc = &std.heap.DirectAllocator.init().allocator;
@@ -15,6 +18,7 @@ var alloc = &std.heap.DirectAllocator.init().allocator;
 pub const ParserError = error{
     OutOfMemory,
     UnexpectedToken,
+    ExpectExpression,
 };
 
 pub const Expr = union(enum) {
@@ -114,7 +118,8 @@ pub const Parser = struct {
         var left = try self.allocator.createOne(Expr);
         left.* = try self.comparison();
 
-        const target_tokens = []TokenType{TokenType.BANG_EQUAL, TokenType.EQUAL_EQUAL};
+        const target_tokens = []TokenType{TokenType.BANG_EQUAL,
+                                          TokenType.EQUAL_EQUAL};
         while (self.match(target_tokens[0..])) {
             var operator = self.previous();
             var right = try self.allocator.createOne(Expr);
@@ -255,7 +260,6 @@ pub const Parser = struct {
                 }
             }
         };
-
         const lit_true = Expr {
             .Literal = Literal {
                 .value = TokenLiteral {
@@ -263,7 +267,6 @@ pub const Parser = struct {
                 }
             }
         };
-
         const lit_nil = Expr {
             .Literal = Literal {
                 .value = TokenLiteral {
@@ -272,15 +275,9 @@ pub const Parser = struct {
             }
         };
 
-        if (self.match(t_false)) {
-            return lit_false;
-        }
-        if (self.match(t_true)) {
-            return lit_true;
-        }
-        if (self.match(t_nil)) {
-            return lit_nil;
-        }
+        if (self.match(t_false)) { return lit_false; }
+        if (self.match(t_true))  { return lit_true; }
+        if (self.match(t_nil))   { return lit_nil; }
 
         if (self.match(t_number_or_string)) {
             var prev = self.previous();
@@ -303,7 +300,8 @@ pub const Parser = struct {
             };
         }
 
-        unreachable;
+        parser_error(self.peek(), "expect expression");
+        return ParserError.ExpectExpression;
     }
 
     fn consume(self: *Parser, token_type: TokenType, message: []const u8) !Token {
@@ -351,13 +349,38 @@ pub const Parser = struct {
         return self.tokens.at(self.current);
     }
 
+    fn synchronize(self: *Parser) void {
+        _ = advance();
+        while(!self.is_at_end()) {
+            if (self.previous().type == TokenType.SEMICOLON) { return; }
+
+            switch(self.peek().type) {
+                TokenType.CLASS,
+                TokenType.FUN,
+                TokenType.VAR,
+                TokenType.FOR,
+                TokenType.IF,
+                TokenType.WHILE,
+                TokenType.PRINT,
+                TokenType.RETURN => {
+                    return;
+                },
+                _ => {
+                    // nothing, keep eating tokens
+                }
+            }
+
+            _ = advance();
+        }
+    }
+
     pub fn parse(self: *Parser) !Expr {
         return try self.expression();
     }
 };
 
 fn parser_error(token: Token, message: []const u8) void {
-    warn("[line {}] Error: {}\n", token.line, message);
+    err(token.line, message);
 }
 
 
@@ -366,8 +389,14 @@ test "parser whatever" {
     var src     = try io.readFileAlloc(alloc, "test/parse.lox");
     var scanner = try Scanner.init(alloc, src);
     var tokens  = try scanner.scan();
+    // for (tokens.toSlice()) |t| {
+    //     warn("{} ({})\n", @tagName(t.type), t.lexeme);
+    // }
     var p = Parser.init(alloc, tokens);
-    var parsed_expr  = try p.parse();
+    var parsed_expr  = p.parse() catch |e| {
+        warn("hit parser error: {}", e);
+        os.exit(65);
+    };
     var printed_expr = try expr_print(alloc, parsed_expr);
     warn("\nprinted expr: {}\n", printed_expr);
 }

@@ -9,6 +9,8 @@ const Map       = std.AutoHashMap;
 const globals = @import("globals.zig");
 const atof    = @import("atof.zig");
 
+use @import("utils.zig");
+
 pub const TokenType = enum {
     // single character
     LEFT_PAREN,
@@ -292,17 +294,4 @@ fn is_alpha(c: u8) bool {
 
 fn is_alphanumeric(c: u8) bool {
     return is_alpha(c) or is_digit(c);
-}
-
-fn err(line_number: i64, msg: []const u8) void {
-    report(line_number, "", msg);
-}
-
-fn report(line_number: i64, location: []const u8, msg: []const u8) void {
-    if (location.len == 0) {
-        warn("[line {}] Error: {}\n", line_number, msg);
-    } else {
-        warn("[line {}] Error ({}): {}\n", line_number, location, msg);
-    }
-    globals.had_error = true;
 }

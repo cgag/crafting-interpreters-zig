@@ -88,7 +88,11 @@ fn run(src: []const u8) !void {
     }
 
     var parser = Parser.init(alloc, tokens);
-    var e = try parser.parse();
+    var e = parser.parse() catch |e| {
+        warn("hit parser error: {}", e);
+        os.exit(65);
+    };
+
     var e_str = try expr_print(alloc, e);
     defer alloc.free(e_str);
 
