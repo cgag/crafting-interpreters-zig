@@ -31,12 +31,16 @@ fn evaluate(e: Expr) LoxVal {
                 TokenType.MINUS => {
                     switch(right_val) {
                         LoxVal.Number => { return LoxVal{.Number = -right_val.Number}; },
-                        LoxVal.Bool   => { return LoxVal{.Bool = !right_val.Bool };    },
                         // TODO(cgag): error handling
                         else => unreachable,
                     }
                 },
                 TokenType.BANG => {
+                    switch(right_val) {
+                        LoxVal.Bool   => { return LoxVal{.Bool = !right_val.Bool };    },
+                        // TODO(cgag): error handling
+                        else => unreachable,
+                    }
                 },
                 else => unreachable,
             }
@@ -73,5 +77,5 @@ test "interpreter" {
     };
     warn("LoxVal: {}\n", evaluate(lit_false));
     
-    TODO(cgag): test evaluating bools
+    TODO(cgag): test evaluating unary exprs
 }
