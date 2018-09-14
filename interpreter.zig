@@ -1,8 +1,10 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const warn = std.debug.warn;
+const mem = std.mem;
 
-const Expr = @import("parser.zig").Expr; const E = @import("parser.zig");
+const Expr = @import("parser.zig").Expr;
+const E    = @import("parser.zig");
 const TokenLiteral = @import("lex.zig").Literal;
 const TokenType    = @import("lex.zig").TokenType;
 
@@ -13,7 +15,30 @@ const LoxVal = union(enum) {
     Bool: bool,
     Nil: NilStruct,
     String: []const u8,
+
+    fn equal(self: *LoxVal, o: LoxVal) bool {
+        // TODO(cgag): should o be passed as a pointer?
+        switch(self.*) {
+            LoxVal.Number => switch(o) {
+                LoxVal.Number => return self.Number == o.Number,
+                else => return false,
+            },
+            LoxVal.Bool => switch(o) {
+                LoxVal.Bool => return self.Bool == o.Bool,
+                else => return false,
+            },
+            LoxVal.Nil => switch(o) {
+                LoxVal.Nil => return true,
+                else => return false,
+            },
+            LoxVal.String => switch(o) {
+                LoxVal.String => return mem.eql(u8, self.String, o.String),
+                else => return false,
+            }
+        }
+    }
 };
+
 
 fn evaluate(e: Expr) LoxVal {
     switch(e) {
@@ -53,7 +78,7 @@ fn evaluate(e: Expr) LoxVal {
 fn is_truthy(value: LoxVal) bool {
     switch(value) {
         LoxVal.Bool => return value.Bool,
-        LoxVal.Nil => return false,
+        LoxVal.Nil  => return false,
         else => return true,
     }
 
@@ -61,21 +86,29 @@ fn is_truthy(value: LoxVal) bool {
 }
 
 test "interpreter" {
-    assert(is_truthy(LoxVal{.Nil=NilStruct{}}) == false);
-    assert(is_truthy(LoxVal{.Bool=false}) == false);
+    assert(is_truthy(LoxVal{.Nil  = NilStruct{}}) == false);
+    assert(is_truthy(LoxVal{.Bool = false})       == false);
 
-    assert(is_truthy(LoxVal{.Bool=true}));
-    assert(is_truthy(LoxVal{.Number=0}));
-    assert(is_truthy(LoxVal{.Number=1}));
+    assert(is_truthy(LoxVal{ .Bool   = true }));
+    assert(is_truthy(LoxVal{ .Number = 0 }));
+    assert(is_truthy(LoxVal{ .Number = 1 }));
 
-    const lit_false = Expr {
-        .Literal = E.Literal {
-            .value = TokenLiteral {
-                .Bool = false,
-            }
-        }
-    };
-    warn("LoxVal: {}\n", evaluate(lit_false));
-    
-    TODO(cgag): test evaluating unary exprs
+    assert((try eval_str("true")).equal(LoxVal{.Bool = true}));
+    assert((try eval_str("false")).equal(LoxVal{.Bool = false}));
+    assert((try eval_str("!false")).equal(LoxVal{.Bool = true}));
+    assert((try eval_str("!true")).equal(LoxVal{.Bool = false}));
+    assert((try eval_str("1")).equal(LoxVal{.Number = 1}));
+    assert((try eval_str("-1")).equal(LoxVal{.Number = -1}));
+}
+
+fn eval_str(src: []const u8) !LoxVal {
+    const Scanner = @import("lex.zig").Scanner;
+    const Parser  = @import("parser.zig").Parser;
+    var alloc = &std.heap.DirectAllocator.init().allocator;
+
+    var scanner  = try Scanner.init(alloc, src);
+    const tokens = try scanner.scan();
+    var p = Parser.init(alloc, tokens);
+    const e = try p.parse();
+    return evaluate(e);
 }
