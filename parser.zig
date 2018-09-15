@@ -12,6 +12,17 @@ const TokenLiteral = @import("lex.zig").Literal;
 
 use @import("utils.zig");
 
+// expression     → equality ;
+// equality       → comparison ( ( "!=" | "==" ) comparison )* ;
+// comparison     → addition ( ( ">" | ">=" | "<" | "<=" ) addition )* ;
+// addition       → multiplication ( ( "-" | "+" ) multiplication )* ;
+// multiplication → unary ( ( "/" | "*" ) unary )* ;
+// unary          → ( "!" | "-" ) unary
+//                | primary ;
+// primary        → NUMBER | STRING | "false" | "true" | "nil"
+//                | "(" expression ")" ;
+
+
 // TODO(cgag): get rid of these globals
 var alloc = &std.heap.DirectAllocator.init().allocator;
 
@@ -32,6 +43,8 @@ pub const Expr = union(enum) {
 pub const Binary = struct {
     left:  *Expr,
     right: *Expr,
+    // TODO(cgag): we could have more fine-grained types.  Operator
+    // can not just be any given token.
     operator: Token,
 };
 
