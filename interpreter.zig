@@ -38,9 +38,15 @@ const LoxVal = union(enum) {
             }
         }
     }
+};
 
 
-fn evaluate(alloc: *mem.Allocator, e: Expr) LoxVal {
+// have to wrap global error set values because evaluate is recursive
+const EvalError = error {
+    OutOfMemory,
+};
+
+fn evaluate(alloc: *mem.Allocator, e: Expr) EvalError!LoxVal {
     switch(e) {
         Expr.Literal => {
             switch(e.Literal.value) {
@@ -52,7 +58,7 @@ fn evaluate(alloc: *mem.Allocator, e: Expr) LoxVal {
         },
 
         Expr.Unary => {
-            const right_val = evaluate(e.Unary.right.*);
+            const right_val = try evaluate(alloc, e.Unary.right.*);
             switch(e.Unary.operator.type) {
                 TT.MINUS => {
                     switch(right_val) {
@@ -73,38 +79,54 @@ fn evaluate(alloc: *mem.Allocator, e: Expr) LoxVal {
         },
 
         Expr.Binary => {
-            const left_val  = evaluate(e.Binary.left.*);
-            const right_val = evaluate(e.Binary.right.*);
+            const left_val  = try evaluate(alloc, e.Binary.left.*);
+            const right_val = try evaluate(alloc, e.Binary.right.*);
 
             switch(e.Binary.operator.type) {
-                TT.STAR  => return left_val.Number * right_val.Number,
-                TT.SLASH => return left_val.Number / right_val.Number,
-                TT.MINUS => return left_val.Number - right_val.Number,
+                TT.STAR  => return lox_num(left_val.Number * right_val.Number),
+                TT.SLASH => return lox_num(left_val.Number / right_val.Number),
+                TT.MINUS => return lox_num(left_val.Number - right_val.Number),
                 // TODO(cgag): string cat operator?
                 TT.PLUS => {
                     switch(left_val) {
-                        LoxVal.Number => return left_val.Number + right_val.Number,
+                        LoxVal.Number => return lox_num(left_val.Number + right_val.Number),
                         LoxVal.String => {
                             // TODO(cgag): i think we're leaking memory all over the fuckin place.
                             // Does it matter?  Can you call free on stack allocated strings?
                             // when are we supposed to call free?
-                            const new_s = fmt.allocPrint(alloc, "{}{}", left_val.String, right_val.String);
-                        }
+                            const new_s = try fmt.allocPrint(alloc, "{}{}", left_val.String, right_val.String);
+                            return lox_str(new_s);
+                        },
+                        else => unreachable, // type error
                     }
-                }
+                },
 
-                TT.GREATER => return left_val.Bool > right_val.Bool,
-                TT.LESS    => return left_val.Bool < right_val.Bool,
-                TT.GREATER_EQUAL => return left_val.Bool >= right_val.Bool,
-                TT.LESS_EQUAL    => return left_val.Bool <= right_val.Bool,
-                TT.EQUAL_EQUAL   => return left_val.Bool == right_val.Bool,
-                TT.BANG_EQUAL    => return left_val.Bool == right_val.Bool,
+                TT.GREATER       => return lox_bool(left_val.Number > right_val.Number),
+                TT.LESS          => return lox_bool(left_val.Number < right_val.Number),
+                TT.GREATER_EQUAL => return lox_bool(left_val.Number >= right_val.Number),
+                TT.LESS_EQUAL    => return lox_bool(left_val.Number <= right_val.Number),
+                TT.EQUAL_EQUAL   => return lox_bool(left_val.Number == right_val.Number),
+                TT.BANG_EQUAL    => return lox_bool(left_val.Number != right_val.Number),
+
+                else => unreachable,
             }
-        }
-
+        },
         else => unreachable,
     }
+
     unreachable;
+}
+
+fn lox_num(n: f64) LoxVal {
+    return LoxVal{.Number=n};
+}
+
+fn lox_str(s: []const u8) LoxVal {
+    return LoxVal{.String=s};
+}
+
+fn lox_bool(b: bool) LoxVal {
+    return LoxVal{.Bool=b};
 }
 
 fn is_truthy(value: LoxVal) bool {
@@ -125,12 +147,31 @@ test "interpreter" {
     assert(is_truthy(LoxVal{ .Number = 0 }));
     assert(is_truthy(LoxVal{ .Number = 1 }));
 
-    assert((try eval_str("true")).equal(LoxVal{.Bool = true}));
-    assert((try eval_str("false")).equal(LoxVal{.Bool = false}));
-    assert((try eval_str("!false")).equal(LoxVal{.Bool = true}));
-    assert((try eval_str("!true")).equal(LoxVal{.Bool = false}));
-    assert((try eval_str("1")).equal(LoxVal{.Number = 1}));
-    assert((try eval_str("-1")).equal(LoxVal{.Number = -1}));
+    assert((try eval_str("true")).equal(lox_bool(true)));
+    assert((try eval_str("false")).equal(lox_bool(false)));
+    assert((try eval_str("!false")).equal(lox_bool(true)));
+    assert((try eval_str("!true")).equal(lox_bool(false)));
+    assert((try eval_str("1")).equal(lox_num(1)));
+    assert((try eval_str("-1")).equal(lox_num(-1)));
+
+    assert((try eval_str("10 > 11")).equal(lox_bool(false)));
+    assert((try eval_str("10 < 11")).equal(lox_bool(true)));
+    assert((try eval_str("10 >= 10")).equal(lox_bool(true)));
+    assert((try eval_str("10 <= 10")).equal(lox_bool(true)));
+    assert((try eval_str("10 <= 11")).equal(lox_bool(true)));
+    assert((try eval_str("10 <= 9")).equal(lox_bool(false)));
+
+    assert((try eval_str("10 == 9")).equal(lox_bool(false)));
+    assert((try eval_str("10 == 10")).equal(lox_bool(true)));
+    assert((try eval_str("10 != 10")).equal(lox_bool(false)));
+    assert((try eval_str("10 != 9")).equal(lox_bool(true)));
+
+    assert((try eval_str("1+1")).equal(lox_num(2)));
+    assert((try eval_str("2*3")).equal(lox_num(6)));
+    assert((try eval_str("6/3")).equal(lox_num(2)));
+    assert((try eval_str("6-3")).equal(lox_num(3)));
+
+    assert((try eval_str("\"hello\" + \" world\"")).equal(lox_str("hello world")));
 }
 
 fn eval_str(src: []const u8) !LoxVal {
