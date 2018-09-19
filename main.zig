@@ -10,6 +10,7 @@ const atof      = @import("atof.zig");
 
 use @import("lex.zig");
 const Parser = @import("parser.zig").Parser;
+const I = @import("interpreter.zig");
 
 // TODO(cgag): not sure this belongs in parser.zig
 const expr_print = @import("parser.zig").expr_print;
@@ -57,6 +58,8 @@ fn runFile(path: []const u8) !void {
     const contents = try io.readFileAlloc(alloc, path);
     defer alloc.free(contents);
     try run(contents);
+    if (globals.had_error) os.exit(65);
+    if (globals.had_runtime_error) os.exit(70);
 }
 
 fn run(src: []const u8) !void {
@@ -88,15 +91,16 @@ fn run(src: []const u8) !void {
     }
 
     var parser = Parser.init(alloc, tokens);
-    var e = parser.parse() catch |e| {
+    var expr = parser.parse() catch |e| {
         warn("hit parser error: {}", e);
         os.exit(65);
     };
 
-    var e_str = try expr_print(alloc, e);
-    defer alloc.free(e_str);
-
-    warn("expr: {}\n", e_str);
+    var val = I.evaluate(alloc, expr) catch |e| {
+        I.report_runtime_error(e);
+        return;
+    };
+    warn("{}\n", val);
 
     if (globals.had_error) {
         os.exit(65);
