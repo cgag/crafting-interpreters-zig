@@ -122,6 +122,8 @@ pub const Scanner = struct {
 
     pub fn deinit(self: *Scanner) void {
         self.keywords.deinit();
+        // TODO(cgag): maybe this should be here
+        self.tokens.deinit();
     }
 
     pub fn scan(self: *Scanner) !ArrayList(Token) {

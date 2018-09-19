@@ -6,6 +6,7 @@ const fmt = std.fmt;
 const os  = std.os;
 
 const Expr    = @import("parser.zig").Expr;
+const Stmt    = @import("parser.zig").Stmt;
 const E       = @import("parser.zig");
 const Token   = @import("lex.zig").Token;
 const TT      = @import("lex.zig").TokenType;
@@ -53,6 +54,19 @@ const EvalError = error {
     TypeErrorStrings,
     TypeErrorPlusInvalidType,
 };
+
+pub fn execute(alloc: *mem.Allocator, s: Stmt) !void {
+    switch(s) {
+        Stmt.Print => {
+            var val = try evaluate(alloc, s.Print);
+            warn("PRINTING: {}\n", val);
+        },
+        Stmt.Expression => {
+            _ = try evaluate(alloc, s.Expression);
+            return;
+        },
+    }
+}
 
 pub fn evaluate(alloc: *mem.Allocator, e: Expr) EvalError!LoxVal {
     switch(e) {
@@ -234,31 +248,31 @@ test "interpreter" {
     assert(is_truthy(LoxVal{ .Number = 1 }));
 
     // TODO(cgag): table and loop
-    assert((try eval_str("true")).equal(lox_bool(true)));
-    assert((try eval_str("false")).equal(lox_bool(false)));
-    assert((try eval_str("!false")).equal(lox_bool(true)));
-    assert((try eval_str("!true")).equal(lox_bool(false)));
-    assert((try eval_str("1")).equal(lox_num(1)));
-    assert((try eval_str("-1")).equal(lox_num(-1)));
+    assert((try eval_str("true;")).equal(lox_bool(true)));
+    assert((try eval_str("false;")).equal(lox_bool(false)));
+    assert((try eval_str("!false;")).equal(lox_bool(true)));
+    assert((try eval_str("!true;")).equal(lox_bool(false)));
+    assert((try eval_str("1;")).equal(lox_num(1)));
+    assert((try eval_str("-1;")).equal(lox_num(-1)));
 
-    assert((try eval_str("10 > 11")).equal(lox_bool(false)));
-    assert((try eval_str("10 < 11")).equal(lox_bool(true)));
-    assert((try eval_str("10 >= 10")).equal(lox_bool(true)));
-    assert((try eval_str("10 <= 10")).equal(lox_bool(true)));
-    assert((try eval_str("10 <= 11")).equal(lox_bool(true)));
-    assert((try eval_str("10 <= 9")).equal(lox_bool(false)));
+    assert((try eval_str("10 > 11;")).equal(lox_bool(false)));
+    assert((try eval_str("10 < 11;")).equal(lox_bool(true)));
+    assert((try eval_str("10 >= 10;")).equal(lox_bool(true)));
+    assert((try eval_str("10 <= 10;")).equal(lox_bool(true)));
+    assert((try eval_str("10 <= 11;")).equal(lox_bool(true)));
+    assert((try eval_str("10 <= 9;")).equal(lox_bool(false)));
 
-    assert((try eval_str("10 == 9")).equal(lox_bool(false)));
-    assert((try eval_str("10 == 10")).equal(lox_bool(true)));
-    assert((try eval_str("10 != 10")).equal(lox_bool(false)));
-    assert((try eval_str("10 != 9")).equal(lox_bool(true)));
+    assert((try eval_str("10 == 9;")).equal(lox_bool(false)));
+    assert((try eval_str("10 == 10;")).equal(lox_bool(true)));
+    assert((try eval_str("10 != 10;")).equal(lox_bool(false)));
+    assert((try eval_str("10 != 9;")).equal(lox_bool(true)));
 
-    assert((try eval_str("1+1")).equal(lox_num(2)));
-    assert((try eval_str("2*3")).equal(lox_num(6)));
-    assert((try eval_str("6/3")).equal(lox_num(2)));
-    assert((try eval_str("6-3")).equal(lox_num(3)));
+    assert((try eval_str("1+1;")).equal(lox_num(2)));
+    assert((try eval_str("2*3;")).equal(lox_num(6)));
+    assert((try eval_str("6/3;")).equal(lox_num(2)));
+    assert((try eval_str("6-3;")).equal(lox_num(3)));
 
-    assert((try eval_str("\"hello\" + \" world\"")).equal(lox_str("hello world")));
+    assert((try eval_str("\"hello\" + \" world\";")).equal(lox_str("hello world")));
 
     // _ = eval_str("4 * \"hello\"") catch |e| {
     //     report_runtime_error(globals.type_error_token, e);
@@ -281,6 +295,6 @@ fn eval_str(src: []const u8) !LoxVal {
     var scanner  = try Scanner.init(alloc, src);
     const tokens = try scanner.scan();
     var p = Parser.init(alloc, tokens);
-    const e = try p.parse();
-    return evaluate(alloc, e);
+    const statements = try p.parse();
+    return evaluate(alloc, statements.at(0).Expression);
 }

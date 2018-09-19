@@ -67,40 +67,43 @@ fn run(src: []const u8) !void {
     defer scanner.deinit();
 
     const tokens = try scanner.scan();
-
-    for (tokens.toSlice()) |token| {
-        if (token.literal) |literal| {
-            switch (literal) {
-                // TODO(cgag): fix compiler so that format just prints the active field in the union
-                Literal.Number => {
-                    warn("{}, (\"{}\"): {.}\n",
-                         @tagName(token.type),
-                         token.lexeme,
-                         literal.Number,
-                         );
-                },
-                Literal.String => {
-                    warn("({}): {}\n", @tagName(token.type), literal.String);
-                },
-                Literal.Nil  => warn("({}): {}\n", @tagName(token.type), literal.Nil),
-                Literal.Bool => warn("({}): {}\n", @tagName(token.type), literal.Bool),
-            }
-        } else {
-            warn("{} ({})\n", @tagName(token.type), token.lexeme);
-        }
-    }
+    // for (tokens.toSlice()) |token| {
+    //     if (token.literal) |literal| {
+    //         switch (literal) {
+    //             // TODO(cgag): fix compiler so that format just prints the active field in the union
+    //             Literal.Number => {
+    //                 warn("{}, (\"{}\"): {.}\n",
+    //                      @tagName(token.type),
+    //                      token.lexeme,
+    //                      literal.Number,
+    //                      );
+    //             },
+    //             Literal.String => {
+    //                 warn("({}): {}\n", @tagName(token.type), literal.String);
+    //             },
+    //             Literal.Nil  => warn("({}): {}\n", @tagName(token.type), literal.Nil),
+    //             Literal.Bool => warn("({}): {}\n", @tagName(token.type), literal.Bool),
+    //         }
+    //     } else {
+    //         warn("{} ({})\n", @tagName(token.type), token.lexeme);
+    //     }
+    // }
 
     var parser = Parser.init(alloc, tokens);
-    var expr = parser.parse() catch |e| {
+    var statements = parser.parse() catch |e| {
         warn("hit parser error: {}", e);
         os.exit(65);
     };
 
-    var val = I.evaluate(alloc, expr) catch |e| {
-        I.report_runtime_error(e);
-        return;
-    };
-    warn("{}\n", val);
+    for (statements.toSlice()) |statement| {
+        try I.execute(alloc, statement);
+    }
+
+    // var val = I.evaluate(alloc, expr) catch |e| {
+    //     I.report_runtime_error(e);
+    //     return;
+    // };
+    // warn("{}\n", val);
 
     if (globals.had_error) {
         os.exit(65);

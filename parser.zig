@@ -61,6 +61,12 @@ pub const Unary = struct {
     right: *Expr,
 };
 
+// TODO(cgag): where  should this statement stuff go?
+pub const Stmt = union(enum) {
+    Expression: Expr,
+    Print: Expr,
+};
+
 // caller owns returned memory
 pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
     switch (e) {
@@ -118,6 +124,25 @@ pub const Parser = struct {
             .current   = 0,
             .allocator = allocator,
         };
+    }
+
+    fn statement(self: *Parser) !Stmt {
+        if (self.match([]TokenType{TokenType.PRINT})) {
+            return self.print_statement();
+        }
+        return self.expression_statement();
+    }
+
+    fn print_statement(self: *Parser) !Stmt {
+        const expr = try self.expression();
+        _ = try self.consume(TokenType.SEMICOLON, "Expect ';' after value.");
+        return Stmt{ .Print = expr };
+    }
+
+    fn expression_statement(self: *Parser) !Stmt {
+        const expr = try self.expression();
+        _ = try self.consume(TokenType.SEMICOLON, "Expect ';' after value.");
+        return Stmt{ .Expression = expr };
     }
 
     // TODO(cgag): maybe these should all be returning *Expr, not Expr?
@@ -387,8 +412,13 @@ pub const Parser = struct {
         }
     }
 
-    pub fn parse(self: *Parser) !Expr {
-        return try self.expression();
+    // TODO(cgag): caller owns returned arraylist, needs to call deinit
+    pub fn parse(self: *Parser) !ArrayList(Stmt) {
+        var statements = ArrayList(Stmt).init(self.allocator);
+        while (!self.is_at_end()) {
+            try statements.append(try self.statement());
+        }
+        return statements;
     }
 };
 
@@ -406,10 +436,10 @@ test "parser whatever" {
     //     warn("{} ({})\n", @tagName(t.type), t.lexeme);
     // }
     var p = Parser.init(alloc, tokens);
-    var parsed_expr  = p.parse() catch |e| {
+    var parsed_statements  = p.parse() catch |e| {
         warn("hit parser error: {}", e);
         os.exit(65);
     };
-    var printed_expr = try expr_print(alloc, parsed_expr);
+    var printed_expr = try expr_print(alloc, parsed_statements.at(0).Expression);
     warn("\nprinted expr: {}\n", printed_expr);
 }
