@@ -1,9 +1,10 @@
-const std = @import("std");
+const std    = @import("std");
 const assert = std.debug.assert;
-const warn = std.debug.warn;
-const mem = std.mem;
-const fmt = std.fmt;
-const os  = std.os;
+const warn   = std.debug.warn;
+const mem    = std.mem;
+const fmt    = std.fmt;
+const os     = std.os;
+const Map    = std.AutoHashMap;
 
 const Expr    = @import("parser.zig").Expr;
 const Stmt    = @import("parser.zig").Stmt;
@@ -13,14 +14,16 @@ const TT      = @import("lex.zig").TokenType;
 const globals = @import("globals.zig");
 const TokenLiteral = @import("lex.zig").Literal;
 
+// TODO(cgag): I think we can just make the type .Nil be void?
 const NilStruct = struct{};
 
-
+var global_env = Map([]const u8, ?LoxVal).init(&std.heap.DirectAllocator.init().allocator);
+// TODO(cgag): deinit when not globalk
 
 const LoxVal = union(enum) {
     Number: f64,
-    Bool: bool,
-    Nil: NilStruct,
+    Bool:   bool,
+    Nil:    NilStruct,
     String: []const u8,
 
     // TODO(cgag): i don't think i should have to write this?
@@ -29,20 +32,30 @@ const LoxVal = union(enum) {
         switch(self.*) {
             LoxVal.Number => switch(o) {
                 LoxVal.Number => return self.Number == o.Number,
-                else => return false,
+                else          => return false,
             },
             LoxVal.Bool => switch(o) {
                 LoxVal.Bool => return self.Bool == o.Bool,
-                else => return false,
+                else        => return false,
             },
             LoxVal.Nil => switch(o) {
                 LoxVal.Nil => return true,
-                else => return false,
+                else       => return false,
             },
             LoxVal.String => switch(o) {
                 LoxVal.String => return mem.eql(u8, self.String, o.String),
-                else => return false,
+                else          => return false,
             }
+        }
+    }
+
+    // caller owns mem
+    fn to_str(self: *const LoxVal, allocator: *mem.Allocator) ![]const u8 {
+        switch(self.*) {
+            LoxVal.Number => return try fmt.allocPrint(allocator, "{}", self.Number),
+            LoxVal.Bool   => return try fmt.allocPrint(allocator, "{}", self.Bool),
+            LoxVal.Nil    => return "<nil>"[0..],
+            LoxVal.String => return try fmt.allocPrint(allocator, "{}", self.String),
         }
     }
 };
@@ -55,16 +68,26 @@ const EvalError = error {
     TypeErrorPlusInvalidType,
 };
 
-pub fn execute(alloc: *mem.Allocator, s: Stmt) !void {
-    switch(s) {
+pub fn execute(alloc: *mem.Allocator, stmt: Stmt) !void {
+    switch(stmt) {
         Stmt.Print => {
-            var val = try evaluate(alloc, s.Print);
-            warn("PRINTING: {}\n", val);
+            const val = try evaluate(alloc, stmt.Print);
+            const s = try val.to_str(alloc);
+            defer alloc.free(s);
+            warn("{}\n", s);
         },
         Stmt.Expression => {
-            _ = try evaluate(alloc, s.Expression);
+            _ = try evaluate(alloc, stmt.Expression);
             return;
         },
+        Stmt.VarDecl => {
+            var init_val: ?LoxVal = null;
+            if (stmt.VarDecl.initializer) |init_expr| {
+                init_val = try evaluate(alloc, init_expr);
+            }
+            _ = try global_env.put(stmt.VarDecl.name.lexeme, init_val);
+            return;
+        }
     }
 }
 
@@ -75,7 +98,6 @@ pub fn evaluate(alloc: *mem.Allocator, e: Expr) EvalError!LoxVal {
                 TokenLiteral.String => return LoxVal{ .String = e.Literal.value.String },
                 TokenLiteral.Number => return LoxVal{ .Number = e.Literal.value.Number },
                 TokenLiteral.Bool   => return LoxVal{ .Bool   = e.Literal.value.Bool } ,
-                // TODO(cgag): I think we can just make the type .Nil be void?
                 TokenLiteral.Nil    => return LoxVal{ .Nil    = NilStruct{} },
             }
         },
@@ -137,12 +159,23 @@ pub fn evaluate(alloc: *mem.Allocator, e: Expr) EvalError!LoxVal {
                 else => unreachable,
             }
         },
-        else => unreachable,
+
+        Expr.Grouping => { // TODO(cgag): implement
+            unreachable;
+        },
+
+        Expr.Variable => {
+            // TODO(cgag): error handling if get fails, don't just yolo .?
+            var maybe_kv_ptr = global_env.get(e.Variable.name.lexeme);
+            switch(kv) => 
+            return .?.*.value.?;
+        }
     }
 
     unreachable;
 }
 
+// TODO(cgag): one word?
 fn type_check_binary(token: Token, left: LoxVal, right: LoxVal) !void {
     globals.type_error_token = token;
     switch(token.type) {
@@ -198,7 +231,6 @@ fn string_operands(token: Token, left: LoxVal, right: LoxVal) !void {
         else => return EvalError.TypeErrorStrings,
     }
 }
-
 
 pub fn report_runtime_error(e: error) void {
     globals.had_runtime_error = true;
@@ -286,6 +318,7 @@ test "interpreter" {
     //     // }
     // };
 }
+// TODO(cgag): need ot test executing statments
 
 fn eval_str(src: []const u8) !LoxVal {
     const Scanner = @import("lex.zig").Scanner;
@@ -293,7 +326,6 @@ fn eval_str(src: []const u8) !LoxVal {
     var alloc = &std.heap.DirectAllocator.init().allocator;
 
     var scanner  = try Scanner.init(alloc, src);
-    const tokens = try scanner.scan();
     var p = Parser.init(alloc, tokens);
     const statements = try p.parse();
     return evaluate(alloc, statements.at(0).Expression);

@@ -12,17 +12,6 @@ const TokenLiteral = @import("lex.zig").Literal;
 
 use @import("utils.zig");
 
-// expression     → equality ;
-// equality       → comparison ( ( "!=" | "==" ) comparison )* ;
-// comparison     → addition ( ( ">" | ">=" | "<" | "<=" ) addition )* ;
-// addition       → multiplication ( ( "-" | "+" ) multiplication )* ;
-// multiplication → unary ( ( "/" | "*" ) unary )* ;
-// unary          → ( "!" | "-" ) unary
-//                | primary ;
-// primary        → NUMBER | STRING | "false" | "true" | "nil"
-//                | "(" expression ")" ;
-
-
 // TODO(cgag): get rid of these globals
 var alloc = &std.heap.DirectAllocator.init().allocator;
 
@@ -37,6 +26,11 @@ pub const Expr = union(enum) {
     Literal:  Literal,
     Grouping: Grouping,
     Unary:    Unary,
+    Variable: Variable,
+};
+
+pub const Variable = struct {
+    name: Token,
 };
 
 // TODO(cgag): need to be able to free
@@ -65,7 +59,14 @@ pub const Unary = struct {
 pub const Stmt = union(enum) {
     Expression: Expr,
     Print: Expr,
+    VarDecl: VarDecl,
 };
+
+pub const VarDecl = struct {
+    name: Token,
+    initializer: ?Expr,
+};
+
 
 // caller owns returned memory
 pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
@@ -83,12 +84,14 @@ pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
         },
         Expr.Grouping => return try parenthesize(a, "group", e),
         Expr.Unary    => return try parenthesize(a, e.Unary.operator.lexeme, e),
+        Expr.Variable => return try parenthesize(a, "var", e),
     }
 }
 
 // caller owns returned memory
 pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrintError![]const u8 {
     const buf = switch (e) {
+        Expr.Literal => unreachable,
         Expr.Binary => blk: {
             var left  = try expr_print(a, e.Binary.left.*);
             var right = try expr_print(a, e.Binary.right.*);
@@ -96,7 +99,6 @@ pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrint
             defer a.free(right);
             break :blk try fmt.allocPrint(a, "({} {} {})", name, left, right);
         },
-        Expr.Literal => unreachable,
         Expr.Grouping => blk: {
             warn("we're in grouping, what???\n");
             var printed_expr = try expr_print(a, e.Grouping.expr.*);
@@ -107,7 +109,10 @@ pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrint
             var right = try expr_print(a, e.Unary.right.*);
             defer a.free(right);
             break :blk try fmt.allocPrint(a, "({} {})", name, right);
-        }
+        },
+        Expr.Variable => blk: {
+            break :blk try fmt.allocPrint(a, "{}", e.Variable.name.lexeme);
+        },
     };
 
     return buf;
@@ -123,6 +128,33 @@ pub const Parser = struct {
             .tokens    = tokens,
             .current   = 0,
             .allocator = allocator,
+        };
+    }
+
+    fn declartion(self: *Parser) !Stmt {
+        errdefer self.synchronize();
+
+        if (self.match([]TokenType{TokenType.VAR})) {
+            return try self.var_declaration();
+        }
+
+        return try self.statement();
+    }
+
+    fn var_declaration(self: *Parser) !Stmt {
+        const name: Token = try self.consume(TokenType.IDENTIFIER, "Expect variable name");
+
+        var initializer: ?Expr = null;
+        if (self.match([]TokenType{TokenType.EQUAL})) {
+           initializer = try self.expression();
+        }
+
+        _ = try self.consume(TokenType.SEMICOLON, "Expect ';' after variable declaration.");
+        return Stmt{
+            .VarDecl = VarDecl{
+                .name=name,
+                .initializer=initializer
+            }
         };
     }
 
@@ -288,6 +320,7 @@ pub const Parser = struct {
         const t_false            = []TokenType{TokenType.FALSE};
         const t_true             = []TokenType{TokenType.TRUE};
         const t_nil              = []TokenType{TokenType.NIL};
+        const t_identifier       = []TokenType{TokenType.IDENTIFIER};
         const t_number_or_string = []TokenType{TokenType.NUMBER, TokenType.STRING};
         const t_left_paren       = []TokenType{TokenType.LEFT_PAREN};
 
@@ -316,6 +349,14 @@ pub const Parser = struct {
         if (self.match(t_false)) { return lit_false; }
         if (self.match(t_true))  { return lit_true; }
         if (self.match(t_nil))   { return lit_nil; }
+
+        if(self.match(t_identifier)) {
+            return Expr{
+                .Variable = Variable {
+                    .name = self.previous(),
+                }
+            };
+        }
 
         if (self.match(t_number_or_string)) {
             var prev = self.previous();
@@ -388,7 +429,7 @@ pub const Parser = struct {
     }
 
     fn synchronize(self: *Parser) void {
-        _ = advance();
+        _ = self.advance();
         while(!self.is_at_end()) {
             if (self.previous().type == TokenType.SEMICOLON) { return; }
 
@@ -403,12 +444,12 @@ pub const Parser = struct {
                 TokenType.RETURN => {
                     return;
                 },
-                _ => {
+                else => {
                     // nothing, keep eating tokens
                 }
             }
 
-            _ = advance();
+            _ = self.advance();
         }
     }
 
@@ -416,7 +457,7 @@ pub const Parser = struct {
     pub fn parse(self: *Parser) !ArrayList(Stmt) {
         var statements = ArrayList(Stmt).init(self.allocator);
         while (!self.is_at_end()) {
-            try statements.append(try self.statement());
+            try statements.append(try self.declartion());
         }
         return statements;
     }
@@ -425,7 +466,6 @@ pub const Parser = struct {
 fn parser_error(token: Token, message: []const u8) void {
     err(token.line, message);
 }
-
 
 test "parser whatever" {
     const Scanner = @import("lex.zig").Scanner;
