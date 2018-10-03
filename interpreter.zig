@@ -17,7 +17,7 @@ const TokenLiteral = @import("lex.zig").Literal;
 // TODO(cgag): I think we can just make the type .Nil be void?
 const NilStruct = struct{};
 
-var global_env = Map([]const u8, ?LoxVal).init(&std.heap.DirectAllocator.init().allocator);
+var global_env = Map([]const u8, LoxVal).init(&std.heap.DirectAllocator.init().allocator);
 // TODO(cgag): deinit when not globalk
 
 const LoxVal = union(enum) {
@@ -52,7 +52,7 @@ const LoxVal = union(enum) {
     // caller owns mem
     fn to_str(self: *const LoxVal, allocator: *mem.Allocator) ![]const u8 {
         switch(self.*) {
-            LoxVal.Number => return try fmt.allocPrint(allocator, "{}", self.Number),
+            LoxVal.Number => return try fmt.allocPrint(allocator, "{.}", self.Number),
             LoxVal.Bool   => return try fmt.allocPrint(allocator, "{}", self.Bool),
             LoxVal.Nil    => return "<nil>"[0..],
             LoxVal.String => return try fmt.allocPrint(allocator, "{}", self.String),
@@ -66,6 +66,7 @@ const EvalError = error {
     TypeErrorNumbers,
     TypeErrorStrings,
     TypeErrorPlusInvalidType,
+    UndefinedVariable,
 };
 
 pub fn execute(alloc: *mem.Allocator, stmt: Stmt) !void {
@@ -81,7 +82,7 @@ pub fn execute(alloc: *mem.Allocator, stmt: Stmt) !void {
             return;
         },
         Stmt.VarDecl => {
-            var init_val: ?LoxVal = null;
+            var init_val = LoxVal { .Nil = NilStruct{} };
             if (stmt.VarDecl.initializer) |init_expr| {
                 init_val = try evaluate(alloc, init_expr);
             }
@@ -97,8 +98,8 @@ pub fn evaluate(alloc: *mem.Allocator, e: Expr) EvalError!LoxVal {
             switch(e.Literal.value) {
                 TokenLiteral.String => return LoxVal{ .String = e.Literal.value.String },
                 TokenLiteral.Number => return LoxVal{ .Number = e.Literal.value.Number },
-                TokenLiteral.Bool   => return LoxVal{ .Bool   = e.Literal.value.Bool } ,
-                TokenLiteral.Nil    => return LoxVal{ .Nil    = NilStruct{} },
+                TokenLiteral.Bool   => return LoxVal{ .Bool   = e.Literal.value.Bool   },
+                TokenLiteral.Nil    => return LoxVal{ .Nil    = NilStruct{}            },
             }
         },
 
@@ -165,10 +166,12 @@ pub fn evaluate(alloc: *mem.Allocator, e: Expr) EvalError!LoxVal {
         },
 
         Expr.Variable => {
-            // TODO(cgag): error handling if get fails, don't just yolo .?
             var maybe_kv_ptr = global_env.get(e.Variable.name.lexeme);
-            switch(kv) => 
-            return .?.*.value.?;
+            if (maybe_kv_ptr) |kv| {
+                return kv.value;
+            }
+            globals.undefined_variable_lexeme = e.Variable.name.lexeme;
+            crash(error.UndefinedVariable);
         }
     }
 
@@ -232,15 +235,34 @@ fn string_operands(token: Token, left: LoxVal, right: LoxVal) !void {
     }
 }
 
-pub fn report_runtime_error(e: error) void {
+pub fn crash(e: error) void {
     globals.had_runtime_error = true;
-    const msg = switch(e) {
-        error.TypeErrorNumbers => "both operands must be numbers",
-        error.TypeErrorStrings => "both operands must be strings",
-        error.TypeErrorPlusInvalidType => "+ operator only works on strings and numbers",
-        else => "some other error, idk",
-    };
-    warn("[line: {}] {}\n", globals.type_error_token.line, msg);
+    var exit_code: u8 = undefined;
+    switch(e) {
+        error.TypeErrorNumbers => {
+            exit_code = 66;
+            const msg = "both operands must be numbers";
+            warn("[line: {}] {}\n", globals.type_error_token.line, msg);
+        },
+        error.TypeErrorStrings => {
+            exit_code = 67;
+            const msg = "both operands must be strings";
+            warn("[line: {}] {}\n", globals.type_error_token.line, msg);
+        },
+        error.TypeErrorPlusInvalidType => {
+            exit_code = 68;
+            const msg = "+ operator only works on strings and numbers";
+            warn("[line: {}] {}\n", globals.type_error_token.line, msg);
+        },
+        error.UndefinedVariable => {
+            exit_code = 69;
+            warn("Undefined variable: {}", globals.undefined_variable_lexeme);
+        },
+        else => {
+            warn("some other error, idk");
+        }
+    }
+    os.exit(exit_code);
 }
 
 // lox_val.equal is just for comparing two enums in zig, this is for
@@ -324,8 +346,8 @@ fn eval_str(src: []const u8) !LoxVal {
     const Scanner = @import("lex.zig").Scanner;
     const Parser  = @import("parser.zig").Parser;
     var alloc = &std.heap.DirectAllocator.init().allocator;
-
     var scanner  = try Scanner.init(alloc, src);
+    const tokens = try scanner.scan();
     var p = Parser.init(alloc, tokens);
     const statements = try p.parse();
     return evaluate(alloc, statements.at(0).Expression);

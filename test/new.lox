@@ -3,5 +3,6 @@ print 1;
 print nil;
 print "hello world";
 print "hello world " + " goodnight moon\n\nlol";
+var fakeident = 10;
 var myident = 4;
 print fakeident * 2;
