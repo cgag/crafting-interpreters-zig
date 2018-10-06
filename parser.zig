@@ -19,6 +19,7 @@ pub const ParserError = error{
     OutOfMemory,
     UnexpectedToken,
     ExpectExpression,
+    InvalidAssignment,
 };
 
 pub const Expr = union(enum) {
@@ -27,7 +28,13 @@ pub const Expr = union(enum) {
     Grouping: Grouping,
     Unary:    Unary,
     Variable: Variable,
+    Assign: Assign,
 };
+
+pub const Assign = struct {
+    name: Token,
+    expr: *Expr,
+}
 
 pub const Variable = struct {
     name: Token,
@@ -179,8 +186,36 @@ pub const Parser = struct {
 
     // TODO(cgag): maybe these should all be returning *Expr, not Expr?
     fn expression(self: *Parser) !Expr {
-        return try self.equality();
+        // return try self.equality();
+        return try self.assignment();
     }
+
+    fn assignment(self: *Parser) !Expr {
+        const expr = self.equality();
+
+        if (self.match([]TokenType{TokenType.EQUAL})) {
+            const equals: Token = self.previous();
+            const value:  Expr  = self.assignment();
+            switch(expr) {
+                Variable => {
+                    return Expr {
+                        .Assign {
+                            .name = expr.Variable.name,
+                            .value = value,
+                        }
+                    };
+                },
+                else => {
+                    // TODO(cgag): error
+                    parser_error(self.peek(), "invalid assignment target");
+                    return ParserError.InvalidAssignment;
+                }
+            }
+        }
+
+        return expr;
+    }
+
 
     // TODO(cgag): how to recursively free all these?
     // equality → comparison ( ( "!=" | "==" ) comparison )* ;

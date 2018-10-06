@@ -4,5 +4,5 @@ print nil;
 print "hello world";
 print "hello world " + " goodnight moon\n\nlol";
 var fakeident = 10;
-var myident = 4;
+fakeident = 5;
 print fakeident * 2;
