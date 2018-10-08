@@ -28,13 +28,13 @@ pub const Expr = union(enum) {
     Grouping: Grouping,
     Unary:    Unary,
     Variable: Variable,
-    Assign: Assign,
+    Assign:   Assign,
 };
 
 pub const Assign = struct {
     name: Token,
     expr: *Expr,
-}
+};
 
 pub const Variable = struct {
     name: Token,
@@ -92,6 +92,9 @@ pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
         Expr.Grouping => return try parenthesize(a, "group", e),
         Expr.Unary    => return try parenthesize(a, e.Unary.operator.lexeme, e),
         Expr.Variable => return try parenthesize(a, "var", e),
+        Expr.Assign   => unreachable,
+        // TODO(cgag): wtf, interpreter.zig:96:5: error: enumeration value '@TagType(Expr).Assign' not handled in switch
+        // Expr.Assign   => return try parenthesize(a, e.Assign.name.lexeme, e),
     }
 }
 
@@ -119,6 +122,12 @@ pub fn parenthesize(a: *mem.Allocator, name: []const u8, e: Expr) fmt.AllocPrint
         },
         Expr.Variable => blk: {
             break :blk try fmt.allocPrint(a, "{}", e.Variable.name.lexeme);
+        },
+        // TODO(cgag): REPORT: accidnetally just put > instead of =>, confusing error message
+        Expr.Assign => blk: {
+            const p_sub_expr = try parenthesize(a, "initializer expr",  e.Assign.expr.*);
+            defer a.free(p_sub_expr);
+            break :blk try fmt.allocPrint(a, "ASSIGN {} = {}", e.Assign.name, p_sub_expr);
         },
     };
 
@@ -190,18 +199,19 @@ pub const Parser = struct {
         return try self.assignment();
     }
 
-    fn assignment(self: *Parser) !Expr {
-        const expr = self.equality();
+    fn assignment(self: *Parser) ParserError!Expr {
+        const expr = try self.equality();
 
         if (self.match([]TokenType{TokenType.EQUAL})) {
             const equals: Token = self.previous();
-            const value:  Expr  = self.assignment();
+            var assignment_expr: Expr = try self.assignment();
             switch(expr) {
-                Variable => {
+                Expr.Variable => {
                     return Expr {
-                        .Assign {
+                        .Assign = Assign {
                             .name = expr.Variable.name,
-                            .value = value,
+                            // TODO(cgag): is this correct?
+                            .expr = &assignment_expr,
                         }
                     };
                 },
