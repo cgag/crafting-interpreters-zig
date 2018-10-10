@@ -23,12 +23,12 @@ pub const ParserError = error{
 };
 
 pub const Expr = union(enum) {
-    Binary:   Binary,
-    Literal:  Literal,
-    Grouping: Grouping,
-    Unary:    Unary,
-    Variable: Variable,
-    Assign:   Assign,
+    Binary:     Binary,
+    Literal:    Literal,
+    Grouping:   Grouping,
+    Unary:      Unary,
+    Variable:   Variable,
+    Assign: Assign,
 };
 
 pub const Assign = struct {
@@ -93,6 +93,7 @@ pub fn expr_print(a: *mem.Allocator, e: Expr) ![]const u8 {
         Expr.Unary    => return try parenthesize(a, e.Unary.operator.lexeme, e),
         Expr.Variable => return try parenthesize(a, "var", e),
         Expr.Assign   => unreachable,
+        // Expr.Assign   => unreachable,
         // TODO(cgag): wtf, interpreter.zig:96:5: error: enumeration value '@TagType(Expr).Assign' not handled in switch
         // Expr.Assign   => return try parenthesize(a, e.Assign.name.lexeme, e),
     }

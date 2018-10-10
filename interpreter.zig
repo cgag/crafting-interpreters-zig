@@ -172,7 +172,9 @@ pub fn evaluate(alloc: *mem.Allocator, e: Expr) EvalError!LoxVal {
             }
             globals.undefined_variable_lexeme = e.Variable.name.lexeme;
             crash(error.UndefinedVariable);
-        }
+        },
+
+        Expr.Assign => unreachable,
     }
 
     unreachable;
