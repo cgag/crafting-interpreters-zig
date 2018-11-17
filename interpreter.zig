@@ -17,10 +17,8 @@ const TokenLiteral = @import("lex.zig").Literal;
 // TODO(cgag): I think we can just make the type .Nil be void?
 const NilStruct = struct{};
 
-var global_env = Map([]const u8, LoxVal).init(&std.heap.DirectAllocator.init().allocator);
-// TODO(cgag): deinit when not globalk
 
-const LoxVal = union(enum) {
+pub const LoxVal = union(enum) {
     Number: f64,
     Bool:   bool,
     Nil:    NilStruct,
@@ -69,30 +67,31 @@ const EvalError = error {
     UndefinedVariable,
 };
 
-pub fn execute(alloc: *mem.Allocator, stmt: Stmt) !void {
+pub fn execute(env: *Map([]const u8, LoxVal), alloc: *mem.Allocator, stmt: Stmt) !void {
     switch(stmt) {
         Stmt.Print => {
-            const val = try evaluate(alloc, stmt.Print);
+            const val = try evaluate(env, alloc, stmt.Print);
             const s = try val.to_str(alloc);
             defer alloc.free(s);
             warn("{}\n", s);
         },
         Stmt.Expression => {
-            _ = try evaluate(alloc, stmt.Expression);
+            _ = try evaluate(env, alloc, stmt.Expression);
             return;
         },
         Stmt.VarDecl => {
             var init_val = LoxVal { .Nil = NilStruct{} };
             if (stmt.VarDecl.initializer) |init_expr| {
-                init_val = try evaluate(alloc, init_expr);
+                init_val = try evaluate(env, alloc, init_expr);
             }
-            _ = try global_env.put(stmt.VarDecl.name.lexeme, init_val);
+            warn("adding {} to env\n", stmt.VarDecl.name.lexeme);
+            _ = try env.put(stmt.VarDecl.name.lexeme, init_val);
             return;
-        }
+        },
     }
 }
 
-pub fn evaluate(alloc: *mem.Allocator, e: Expr) EvalError!LoxVal {
+pub fn evaluate(env: *Map([]const u8, LoxVal),  alloc: *mem.Allocator, e: Expr) EvalError!LoxVal {
     switch(e) {
         Expr.Literal => {
             switch(e.Literal.value) {
@@ -104,7 +103,7 @@ pub fn evaluate(alloc: *mem.Allocator, e: Expr) EvalError!LoxVal {
         },
 
         Expr.Unary => {
-            const right_val = try evaluate(alloc, e.Unary.right.*);
+            const right_val = try evaluate(env, alloc, e.Unary.right.*);
             switch(e.Unary.operator.type) {
                 TT.MINUS => {
                     switch(right_val) {
@@ -125,8 +124,8 @@ pub fn evaluate(alloc: *mem.Allocator, e: Expr) EvalError!LoxVal {
         },
 
         Expr.Binary => {
-            const left_val  = try evaluate(alloc, e.Binary.left.*);
-            const right_val = try evaluate(alloc, e.Binary.right.*);
+            const left_val  = try evaluate(env, alloc, e.Binary.left.*);
+            const right_val = try evaluate(env, alloc, e.Binary.right.*);
 
             try type_check_binary(e.Binary.operator, left_val, right_val);
 
@@ -166,7 +165,17 @@ pub fn evaluate(alloc: *mem.Allocator, e: Expr) EvalError!LoxVal {
         },
 
         Expr.Variable => {
-            var maybe_kv_ptr = global_env.get(e.Variable.name.lexeme);
+            // why is global_env empty with the repl? Something with how global_env gets initialized?
+            warn("evaluating variable {}:\n", e.Variable.name.lexeme);
+            // TODO(cgag): how the fuck is this 16?
+            warn("env len: {}\n", env.count());
+            var it = env.iterator();
+            while (it.next()) |kv| {
+                // TODO(cgag): ok, how the fuck is the key "t" using the repl??
+                warn("entry: {} \n", kv);
+            }
+
+            var maybe_kv_ptr = env.get(e.Variable.name.lexeme);
             if (maybe_kv_ptr) |kv| {
                 return kv.value;
             }
@@ -237,7 +246,7 @@ fn string_operands(token: Token, left: LoxVal, right: LoxVal) !void {
     }
 }
 
-pub fn crash(e: error) void {
+pub fn crash(e: anyerror) void {
     globals.had_runtime_error = true;
     var exit_code: u8 = undefined;
     switch(e) {

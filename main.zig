@@ -4,6 +4,7 @@ const mem  = std.mem;
 const os   = std.os;
 const io   = std.io;
 const ArrayList = std.ArrayList;
+const Map       = std.AutoHashMap;
 
 const globals   = @import("globals.zig");
 const atof      = @import("atof.zig");
@@ -11,6 +12,7 @@ const atof      = @import("atof.zig");
 use @import("lex.zig");
 const Parser = @import("parser.zig").Parser;
 const I = @import("interpreter.zig");
+const LoxVal = I.LoxVal;
 
 // TODO(cgag): not sure this belongs in parser.zig
 const expr_print = @import("parser.zig").expr_print;
@@ -20,6 +22,8 @@ const expr_print = @import("parser.zig").expr_print;
 var alloc = &std.heap.DirectAllocator.init().allocator;
 // defer std.heap.DirectAlloctor.deinit();
 
+var global_env = Map([]const u8, LoxVal).init(&std.heap.DirectAllocator.init().allocator);
+// TODO(cgag): deinit when not globalk
 
 // TODO(cgag): don't have alloc as a global
 // TODO(cgag): make atof return an error union with a potential overflow
@@ -67,43 +71,16 @@ fn run(src: []const u8) !void {
     defer scanner.deinit();
 
     const tokens = try scanner.scan();
-    // for (tokens.toSlice()) |token| {
-    //     if (token.literal) |literal| {
-    //         switch (literal) {
-    //             // TODO(cgag): fix compiler so that format just prints the active field in the union
-    //             Literal.Number => {
-    //                 warn("{}, (\"{}\"): {.}\n",
-    //                      @tagName(token.type),
-    //                      token.lexeme,
-    //                      literal.Number,
-    //                      );
-    //             },
-    //             Literal.String => {
-    //                 warn("({}): {}\n", @tagName(token.type), literal.String);
-    //             },
-    //             Literal.Nil  => warn("({}): {}\n", @tagName(token.type), literal.Nil),
-    //             Literal.Bool => warn("({}): {}\n", @tagName(token.type), literal.Bool),
-    //         }
-    //     } else {
-    //         warn("{} ({})\n", @tagName(token.type), token.lexeme);
-    //     }
-    // }
-
     var parser = Parser.init(alloc, tokens);
+
     var statements = parser.parse() catch |e| {
         warn("hit parser error: {}", e);
         os.exit(65);
     };
 
     for (statements.toSlice()) |statement| {
-        try I.execute(alloc, statement);
+        try I.execute(&global_env, alloc, statement);
     }
-
-    // var val = I.evaluate(alloc, expr) catch |e| {
-    //     I.report_runtime_error(e);
-    //     return;
-    // };
-    // warn("{}\n", val);
 
     if (globals.had_error) {
         os.exit(65);
